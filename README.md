@@ -41,8 +41,8 @@ The repo ships with `conduyt-pilot-data-v2.zip` already built (~290 KB, 243 exam
 
 ```
 metadata.json                               # dataset info: counts, schema, version
-train.jsonl                                 # 220 chat-format examples
-eval.jsonl                                  #  23 chat-format examples
+train.jsonl                                 # 243 chat-format examples
+eval.jsonl                                  #  25 chat-format examples
 boards/adafruit-feather-esp32-s3.json
 boards/adafruit-feather-nrf52840-sense.json
 boards/arduino-nano-33-ble.json
@@ -99,7 +99,7 @@ The notebooks push to four HF repos under `virgilvox/` on first run (they use `c
 
 ## Step 4: run train.ipynb
 
-Click **Run All**. Expected wall time on T4 x2: roughly **45-75 minutes** for 220 examples × 5 epochs on the 1.5B base. v2 takes longer than v1 (which was 30-60 min) because of more data and more epochs.
+Click **Run All**. Expected wall time on T4 x2: roughly **45-75 minutes** for 243 examples × 5 epochs on the 1.5B base. v2 takes longer than v1 (which was 30-60 min) because of more data and more epochs.
 
 What happens, in order:
 1. Pinned installs (`unsloth==2026.4.8`, `transformers==4.56.2`, `trl==0.22.2 --no-deps`, etc.). `huggingface_hub` is intentionally NOT pinned (transformers 4.56.2 caps it at `<1.0`; v1's pin to 1.12.0 broke the install).
