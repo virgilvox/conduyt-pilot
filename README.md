@@ -2,9 +2,10 @@
 
 Fine-tune toolkit for a small embedded-coding model. Phase 1 builds a clean training dataset of (system, user, assistant) chat triples covering 8 representative MCU boards across Arduino, PlatformIO, ESP-IDF, Conduyt firmware, and conduyt-js. Phase 2 runs an Unsloth + QLoRA fine-tune of `Qwen2.5-Coder-1.5B-Instruct` on Kaggle's free T4 x2 tier, then exports GGUF (Ollama / llama.cpp / Pi) and MLC (browser via WebLLM).
 
-**Two dataset versions ship in this repo:**
-- `conduyt-pilot-data-v1.zip` (151 examples) — initial corpus.
-- `conduyt-pilot-data-v2.zip` (243 examples) — adds 30 multi-turn conduyt-js conversations, 20 Arduino-vocab override examples, and 10 API doc-style references. **Use v2** unless you have a specific reason to revisit v1.
+**The current corpus** (`conduyt-pilot-data-v2.zip`, 268 examples):
+- 151 hand-curated v1 seed + synthetic examples (Arduino, PlatformIO, ESP-IDF, NeoPixel, I2C, SPI, conduyt firmware, conduyt-js, ESP32 WiFi)
+- 92 v2 conduyt-js batches: 30 single-turn (every transport/module/error class), 32 multi-turn conversations, 20 Arduino-vocab override examples, 10 API doc-style Q&A
+- 25 doc-derived examples extracted from `../conduyt/site/content/docs/` (concepts, how-to, modules with code stripped, reference, tutorials) via `scripts/07_extract_conduyt_docs.py`
 
 ## Setup
 
@@ -19,12 +20,12 @@ uv sync --extra semantic
 ## Where things are
 
 ```
-data/seeds/                  90 hand-curated examples (committed)
+data/seeds/                  hand-curated + doc-derived examples (committed)
 data/boards/                 8 board capability profiles (committed)
 data/raw/                    synthetic outputs (gitignored)
 data/processed/              cleaned/validated/split outputs (gitignored)
 prompts/                     synthesis system + template prompts
-scripts/                     pipeline (01-05) + local GGUF test (06)
+scripts/                     pipeline (01-05) + local GGUF test (06) + docs extractor (07)
 kaggle/                      train.ipynb + convert_mlc.ipynb + troubleshooting
 tracking/handoffs/           session handoffs
 conduyt-pilot-data-v2.zip    the current Kaggle bundle (gitignored)
@@ -194,6 +195,22 @@ uv run scripts/05_build_kaggle_dataset.py
 After regenerating, re-upload the new zip to Kaggle as a new version of the `conduyt-pilot-data` dataset.
 
 The validator (script 02) accepts both single-turn (3 messages: system/user/assistant) and multi-turn (5+ messages with proper alternation). Multi-turn examples teach the model to maintain API consistency across follow-up prompts.
+
+## Pulling more from the conduyt docs
+
+`scripts/07_extract_conduyt_docs.py` walks `../conduyt/site/content/docs/`, strips YAML frontmatter, normalizes em/en dashes, scrubs banned phrases, and emits one training example per doc. Module docs have known API drift (e.g. `import { Servo }` instead of the actual `ConduytServo`), so the script strips code blocks from those by default and keeps only the prose (wiring tables, hardware notes, command reference). Concept and how-to docs ship with code intact.
+
+```bash
+uv run scripts/07_extract_conduyt_docs.py
+# wrote 26 examples to data/raw/v3_conduyt_docs.jsonl
+# 4 drift warnings (already neutralized by stripping code from those docs)
+
+# After spot-checking, promote into seeds:
+mv data/raw/v3_conduyt_docs.jsonl data/seeds/v3_conduyt_docs.jsonl
+# Then rerun the regen pipeline above.
+```
+
+Re-run whenever the conduyt docs evolve. The extractor's drift-warning system flags any code block that uses a deprecated import or constructor pattern; if a new one slips in, add a regex to `DRIFT_PATTERNS` in the script.
 
 ---
 
