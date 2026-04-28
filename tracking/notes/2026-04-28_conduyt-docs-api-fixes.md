@@ -501,7 +501,44 @@ That every first-page README had drifted is the most consequential finding of th
 - Other README files (`broker/README.md`, `sdk/{go,rust,swift,wasm}/README.md`) checked for the same patterns. No additional drift.
 - Python `analog_read` and `digital_read` exist as snake_case methods on `_PinProxy` (mirrors JS API).
 
-## Verification (post thirteenth pass)
+## Fourteenth-pass findings — firmware example sketches + cross-cutting sweep
+
+User pushed for one more. Audited the firmware example sketches (`firmware/examples/*.ino`) end-to-end and ran a final cross-everything sweep for any remaining `pin(A0)` / `read('analog')` patterns anywhere in the conduyt repo (including .ino, .cpp, .h, .ts, .js, .py).
+
+### Firmware example sketches — all 6 verified clean
+- `BasicBlink/BasicBlink.ino`: minimal serial transport, no modules. ✓
+- `BLEDevice/BLEDevice.ino`: `ConduytBLE("CONDUYT-Servo")` + servo module + writable angle datastream. ✓
+- `DatastreamThermostat/DatastreamThermostat.ino`: temperature/setpoint/relay datastreams, write callbacks. ✓
+- `FullKitchen/FullKitchen.ino`: servo + neopixel modules with **default constructors** (the post-pass-13 correct pattern), four datastreams. ✓
+- `MQTTSensor/MQTTSensor.ino`: WiFi + MQTT transport, two read-only datastreams. ✓
+- `ServoControl/ServoControl.ino`: serial transport + servo module. The JS host-side example in the comment block uses `new ConduytServo(device); await servo.attach(9); await servo.write(90)` which is the correct post-pass-1 API. ✓
+
+The firmware examples were the **right reference** all along — they used `new ConduytModuleNeoPixel()` (default constructor) correctly, while the firmware/README.md showed a fictional `(6, 30)` constructor. Pass 13 fixed the README to match the examples.
+
+### Cross-cutting verification
+- **No remaining `pin(A0).read('analog')`** patterns anywhere in `../conduyt/` (verified via recursive grep across .md, .ino, .cpp, .h, .ts, .js, .py files).
+- **No remaining `device.pin([A-Z][0-9]+)`** bare-identifier patterns.
+- **All firmware module sketches** use `new ConduytModule<X>()` with default constructors (matching the actual class definitions in `firmware/src/conduyt/modules/`).
+
+### Pass 14: zero new bugs
+This pass found **zero new drift**. The audit has genuinely converged on the surfaces I can verify without running on hardware.
+
+## Final standing across 14 audit passes
+
+**43 distinct drift sites fixed across 25 conduyt repo files** (~520 lines changed total in `../conduyt/`).
+
+Files modified in `../conduyt/` (all uncommitted; user's repo):
+- 4 root/SDK READMEs: `README.md`, `firmware/README.md`, `sdk/js/README.md`, `sdk/python/README.md`
+- 1 board doc: `boards/nrf52840-dk.md`
+- 6 how-to guides: `add-module.md`, `connect-ble.md`, `connect-mqtt.md`, `flash-ota.md`, `troubleshooting.md`, `use-datastreams.md`
+- 4 module docs: `dht.md`, `i2c-passthrough.md`, `neopixel.md`, `servo.md`
+- 4 reference docs: `datastream-types.md`, `firmware-api.md`, `js-api.md`, `packet-structure.md`
+- 5 SDK landing pages: `go.md`, `javascript.md`, `python.md`, `rust.md`, `swift.md`
+- 1 tutorial: `what-is-conduyt.md`
+
+The conduyt-pilot side has been pulled through every pass. v2 bundle (243 train + 25 eval, ~112 KB) reflects every fix and is ready to upload to Kaggle.
+
+## Verification (post fourteenth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
