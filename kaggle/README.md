@@ -1,85 +1,72 @@
-# Kaggle workflow (Phase 2)
+# Kaggle troubleshooting + pin rationale
 
-Run the fine-tune on Kaggle's free T4 x2 tier, push the result to HF Hub as a LoRA adapter, GGUF, and MLC bundle.
+The full step-by-step Kaggle workflow lives in the top-level `README.md`. This file covers failure modes and why specific versions are pinned.
 
-## 1. Build the dataset zip locally
+## Pin rationale (`train.ipynb`)
 
-After Phase 1 finishes (`scripts/05_build_kaggle_dataset.py`), you'll have a `conduyt-pilot-data-v<N>.zip` in the repo root.
+The pins come from Unsloth's own current Kaggle Qwen2.5-Coder reference notebook plus the `requires_dist` constraints in `unsloth==2026.4.8`. Newer versions on PyPI break the install:
 
-## 2. Upload to Kaggle as a private Dataset
-
-- New Dataset, upload the zip, set visibility Private.
-- Dataset slug: `conduyt-pilot-data` (the train notebook expects `/kaggle/input/conduyt-pilot-data/...`). If your Kaggle username is `virgilvox`, the full slug becomes `virgilvox/conduyt-pilot-data`.
-- Bump the dataset version each time you regenerate.
-
-## 3. Configure secrets
-
-Kaggle notebook -> right panel -> Add-ons -> Secrets:
-
-| Secret | Required | Use |
+| Package | Pinned | Why |
 |---|---|---|
-| `HF_TOKEN` | yes | Push adapter, GGUF, MLC repos. Needs **write** scope. |
-| `WANDB_API_KEY` | optional | Run logging. Skip and `report_to` falls back to `none`. |
+| `unsloth` | 2026.4.8 | Reference Kaggle notebook target. No `[kaggle-new]` extra needed in 2026. |
+| `transformers` | 4.56.2 | Unsloth's reference notebook pin. PyPI latest (5.x) is technically allowed by `requires_dist` but untested; newer-than-5.5 is excluded. |
+| `trl` | 0.22.2 | Pinned via `--no-deps` so trl 1.x doesn't pull a conflicting transformers. |
+| `peft` | 0.19.1 | Satisfies `peft>=0.18.0,!=0.11.0`. |
+| `bitsandbytes` | 0.49.2 | Satisfies `bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0`. |
+| `accelerate` | 1.13.0 | Satisfies `accelerate>=0.34.1`. |
+| `datasets` | 4.3.0 | Unsloth caps `datasets<4.4.0`. PyPI latest 4.8.x is OUT OF RANGE. |
+| `huggingface_hub` | 1.12.0 | Satisfies `huggingface_hub>=0.34.0`. |
 
-## 4. Set up the train notebook
+If you re-run this in 6+ months, run `pip show unsloth` first and re-derive the compatibility matrix. Don't blindly take "latest".
 
-- Upload `kaggle/train.ipynb` (or paste cells).
-- Right panel:
-  - **Accelerator:** GPU T4 x2 (free tier).
-  - **Internet:** ON.
-  - **Persistence:** ON (so checkpoints survive a kernel restart).
-- **Add input:** the Kaggle dataset you uploaded in step 2.
-- **Edit the HF repo names** in cells that push to `virgilvox/...` to your own HF user. Search the notebook for `virgilvox` and replace.
+## Pin rationale (`convert_mlc.ipynb`)
 
-## 5. Run all
+| Package | Pinned | Why |
+|---|---|---|
+| `mlc-llm-nightly-cu122` / `mlc-ai-nightly-cu122` | latest pre-release | CUDA-suffixed packages. cu122 matches Kaggle T4's CUDA runtime in 2026. |
 
-Expected wall time on T4 x2: roughly 30 to 60 minutes for ~150 examples x 3 epochs on the 1.5B base. Most of the time is the GGUF export at the end (`save_pretrained_gguf` runs three quantizations sequentially).
+If Kaggle moves to CUDA 12.8 (already on some images), swap to `mlc-llm-nightly-cu128` + `mlc-ai-nightly-cu128`.
 
-What lands at the end:
-- `virgilvox/conduyt-pilot-1.5b-lora` (LoRA adapter only)
-- `virgilvox/conduyt-pilot-1.5b-gguf` (Q4_K_M, Q5_K_M, Q8_0 files)
-- A merged 16-bit model at `/kaggle/working/merged/` (used in the next step)
+## WebLLM model_lib URL
 
-## 6. (Recommended) push the merged model to HF
+Confirmed against `mlc-ai/web-llm@v0.2.82`'s `src/config.ts` (lines 290-291, 1378-1389) and HTTP-200 verified:
 
-Before running `convert_mlc.ipynb`, push `/kaggle/working/merged` to a private HF repo so the MLC notebook can pull it cleanly:
-
-```python
-from huggingface_hub import HfApi
-api = HfApi(token=os.environ["HF_TOKEN"])
-api.upload_folder(
-    folder_path="/kaggle/working/merged",
-    repo_id="virgilvox/conduyt-pilot-1.5b-merged",
-    repo_type="model",
-)
+```
+https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_80/Qwen2-1.5B-Instruct-q4f16_1-ctx4k_cs1k-webgpu.wasm
 ```
 
-(Add this as a one-off cell at the end of `train.ipynb` or run it in a fresh kernel against the `merged/` folder.)
+The `v0_2_80` subfolder is the WebLLM convention; the wasm itself targets the Qwen2.5-Coder-1.5B-Instruct-q4f16_1 quantization our convert step produces.
 
-## 7. Run convert_mlc.ipynb
+## Failure modes
 
-- New Kaggle notebook, accelerator GPU T4 (single, T4 x2 not needed).
-- Internet ON, Persistence ON.
-- HF_TOKEN secret.
-- Set `MERGED_REPO` in the notebook to the repo you pushed the merged model to.
+### "bf16 is not supported on this device"
+T4 silicon is fp16-only. The notebook hard-codes `bf16=False` and `fp16=True`. Don't flip them.
 
-Outputs: `virgilvox/conduyt-pilot-1.5b-MLC` plus a printed `appConfig` snippet for WebLLM.
+### OOM during `save_pretrained_merged` or `save_pretrained_gguf`
+The merge spikes RAM near the T4 ceiling. If it dies:
+1. Restart the kernel.
+2. Re-run from the merge cell only (skip re-training; the LoRA adapter is already on HF from the earlier `push_to_hub` cell).
+3. If still OOM, re-load the adapter via `FastLanguageModel.from_pretrained(MODEL_NAME)` + `model.load_adapter(ADAPTER_REPO)` instead of holding both training-state and merge in memory.
 
-## 8. Smoke-test locally
-
+### `save_pretrained_gguf` errors with "convert.py not found"
+Unsloth caches a vendored llama.cpp on first run. If the cache fails to populate:
 ```bash
-uv run scripts/06_test_local.py
+cd /kaggle/working
+git clone https://github.com/ggerganov/llama.cpp
 ```
+Then re-run the cell.
 
-Pulls the GGUF from HF, runs 5 sanity prompts + 10 from `data/processed/eval.jsonl` against both the base and the fine-tuned model side-by-side.
+### `mlc-llm-nightly-cu122` not found on PyPI
+Kaggle's CUDA version moved. Check with `nvidia-smi` in a code cell; if you see CUDA 12.8, swap to `cu128` packages.
 
-## Pinned dependency rationale
+### `mlc_llm convert_weight` complains about quantization name
+Quantization names in MLC v0.x: `q4f16_1`, `q4f32_1`, `q0f16`, `q0f32`. The `q4f16_1` format is what WebLLM expects; don't use `q4_k_m` here (that's a GGUF-only format).
 
-The pins in `train.ipynb` (unsloth 2026.4.8, transformers 4.56.2, trl 0.22.2 with --no-deps, datasets 4.3.0) come from Unsloth's own current Kaggle Qwen2.5-Coder reference notebook plus the `requires_dist` constraints in `unsloth==2026.4.8`. Newer versions on PyPI (transformers 5.x, datasets 4.4+) violate Unsloth's constraints. If you're re-running this in 6 months, run `pip show unsloth` first and re-derive the compatibility pins.
+### Notebook can't see the dataset
+Verify the dataset slug is exactly `conduyt-pilot-data` (the path the train notebook hardcodes is `/kaggle/input/conduyt-pilot-data/`). If your Kaggle username prefixes the slug, the mount path is still `/kaggle/input/conduyt-pilot-data/` regardless of the owner — the slug part is what counts.
 
-## Troubleshooting
+### `HF_TOKEN` not found
+Verify Add-ons -> Secrets in the Kaggle notebook (not the dataset). Secret name must be exactly `HF_TOKEN`.
 
-- **"bf16 is not supported on this device"** : T4 is fp16 only. The notebook already sets `bf16=False`. Don't change it.
-- **OOM on GGUF export** : the merge step runs in fp16 and can spike RAM near the T4 ceiling. If it fails, restart the kernel and run starting from cell 12 (`save_pretrained_merged`) on a clean GPU.
-- **`mlc-llm-nightly-cu122` not found** : Kaggle's CUDA version may have moved to 12.8. Try `mlc-llm-nightly-cu128` and the matching `mlc-ai-nightly-cu128`.
-- **`save_pretrained_gguf` errors with "convert.py not found"** : Unsloth caches a vendored llama.cpp on first run. If the cache fails to populate, manually `git clone https://github.com/ggerganov/llama.cpp` into `/kaggle/working/` and re-run.
+### `push_to_hub` 403
+Token is read-only. Generate a new one with **Write** scope at https://huggingface.co/settings/tokens.
