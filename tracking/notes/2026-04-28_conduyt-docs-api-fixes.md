@@ -409,6 +409,34 @@ User pushed for more. Audited `reference/firmware-api.md` line-by-line against t
 - **All other transport constructors** (Serial, MQTT, BLE) verified against their `firmware/src/conduyt/transport/*.h` source files.
 - **Built-in modules section** (servo, neopixel, encoder, stepper, dht, oled, pid command tables) consistent with the JS-side wrapper command IDs verified in earlier passes.
 
+## Eleventh-pass findings — cross-doc consistency + protocol codegen
+
+User pushed deeper. This pass cross-checked numeric claims that appear in multiple docs and audited the auto-generated protocol layer.
+
+### Found and fixed (1 drift site)
+
+**`flash-ota.md` claim that "ESP32 advertises 1024" was wrong.** Checked `firmware/src/conduyt/ConduytBoard.h` directly:
+
+```cpp
+#define CONDUYT_PACKET_BUF_SIZE   512   // ESP32 default (and most platforms)
+#define CONDUYT_PACKET_BUF_SIZE   256   // SAMD
+#define CONDUYT_PACKET_BUF_SIZE   128   // ATmega328
+```
+
+ESP32 advertises 512, not 1024. Fixed the claim with the actual per-platform buffer sizes (ESP32/RP2040/nRF52/STM32/Teensy = 512, SAMD = 256, ATmega328 = 128) and noted users can override at compile time.
+
+### Verified clean
+- **Module command bytes**: every `case 0x<XX>` in firmware module .h files matches the JS wrapper's `cmd(0x<XX>, ...)` calls. Servo/NeoPixel/OLED/DHT/Encoder/Stepper/PID dispatch tables verified line-for-line.
+- **COBS overhead** is described identically in `concepts/why-binary.md` ("approximately 0.4%, 1 byte per 254 bytes worst case") and `reference/packet-structure.md` ("1 byte per 254 bytes of data"). 1/254 = 0.39% — math agrees.
+- **HELLO_RESP layout** in `reference/hello-resp.md` example uses max_payload = 128 (matching the Uno/ATmega328 default per ConduytBoard.h). Internal example consistent.
+- **Single source of truth**: `protocol/constants.json` is the master, auto-generates `firmware/src/conduyt/core/conduyt_constants.h`, `sdk/js/src/core/crc8.ts`, `sdk/python/src/conduyt/core/crc8.py`, etc., via `protocol/generate.ts`. So CRC8 tables and protocol constants are guaranteed consistent across all SDKs (assuming generator was run).
+- **Conformance test vectors**: `conformance/vectors/{crc8,wire,cobs}_vectors.json` validate per-SDK implementations against shared inputs. Tests don't surface in docs but their existence is a backstop against future drift.
+- **Protocol version**: now consistent at `0x02` across all SDK docs (JS, Python, Go, Rust, Swift, WASM) after the WASM fix in pass 9.
+
+### Out-of-scope (deliberately not audited)
+- **Firmware C++ runtime** (e.g., does `device.poll()` actually pump the OTA orchestrator at the right cadence?). Verifiable only by running on hardware.
+- **`protocol/generate.ts` codegen logic** (would need to run it and diff outputs against committed generated files). It's a build-time tool; if the committed generated files are correct (which they are, since runtime works), the generator is correct.
+
 ## Verification (post tenth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
