@@ -264,7 +264,65 @@ The `helloPayload()` and `autoRespond()` helpers I added in pass 5 are byte-perf
 - Firmware C++ code blocks beyond verifying the methods referenced exist in `firmware/src/conduyt/ConduytDevice.h`
 - Broker-side MQTT topic routing claims in `connect-mqtt.md` (would require reading `broker/` source)
 
-## Verification (post sixth pass)
+## Seventh-pass findings — Python SDK audit
+
+User asked me to keep going. This pass expanded scope into the Python SDK references in conduyt docs. Found **three real bugs**:
+
+### 1. `modules/i2c-passthrough.md` Python example used fictional API
+The Python section called `await device.i2c_write(0x68, b"\x00")` and `await device.i2c_read(0x68, 2)`. **These methods don't exist in the Python SDK.** Confirmed by greppping `sdk/python/src/conduyt/` (no matches for `i2c_write` / `i2c_read` / `def i2c`).
+
+The Python `ConduytDevice` only exposes: `connect`, `disconnect`, `ping`, `reset`, `pin(num)`, `ota_begin/chunk/finalize`, `_send_command`. There's no datastream, module, or i2c proxy method. (The Python module wrappers like `ConduytServo` take a `module_id` argument and send raw `MOD_CMD` packets via `_send_command`.)
+
+Fixed: rewrote the Python example to send raw `CMD.I2C_WRITE` and `CMD.I2C_READ` packets via `_send_command`, with the correct wire format `[bus, addr, ...]`.
+
+### 2. `how-to/add-module.md` Python imported a fictional module
+```python
+from conduyt.protocol import CMD_MOD_CMD   # WRONG
+```
+
+`conduyt.protocol` doesn't exist. Constants are at `conduyt.core.constants`, and they're class attributes on `CMD`, not module-level names: actual is `CMD.MOD_CMD`, not `CMD_MOD_CMD`.
+
+Also fixed a subtler bug: `get_state` returned `resp[0]` but the `MOD_RESP` payload is `module_id(1) + data(N)`, so `resp[0]` returns the module ID, not the data byte. Fixed to `resp[1] if len(resp) > 1 else 0`.
+
+### 3. `how-to/use-datastreams.md` Python had FOUR overlapping bugs
+```python
+from conduyt.protocol import CMD_DS_READ, CMD_DS_WRITE, CMD_DS_SUBSCRIBE   # all wrong
+...
+resp = await device._send_command(CMD_DS_READ, b'temperature\x00')          # wrong payload
+temp = struct.unpack('<f', resp[:4])[0]                                       # wrong response slice
+```
+
+(a) Fictional `conduyt.protocol` module.  
+(b) Fictional `CMD_DS_READ` / `CMD_DS_WRITE` / `CMD_DS_SUBSCRIBE` names — actual is `CMD.DS_READ` etc.  
+(c) **Wrong payload format**: `DS_READ` takes a single-byte `ds_index` (per packet-types.md), not a null-terminated name string. The firmware would parse the first byte (`'t'` = 0x74 = 116) as an index and either NAK with `UNKNOWN_DATASTREAM` or read garbage.  
+(d) **Wrong response slice**: `DS_READ_RESP` payload is `ds_index(u8) + value(N)`. Slicing `resp[:4]` reads bytes 0-3 which include the leading `ds_index` byte, not the float32. Should be `resp[1:5]`.
+
+Fixed: complete rewrite with a `ds_index(device, name)` helper that looks up the index from `device.capabilities.datastreams`, then sends the correct binary payload. Response slicing skips the leading `ds_index` byte.
+
+## Verified clean
+- Python ConduytServo: `__init__(device, module_id=0)`, `attach(pin, min_us=544, max_us=2400)` — matches docs.
+- Python ConduytNeoPixel: `__init__(device, module_id=0)`, `begin(pin, count, pixel_type=0)`, `set_pixel`, `fill` — matches docs.
+- Python ConduytDHT: `begin(pin, sensor_type=22)` — matches `dht.begin(pin=4, sensor_type=22)` in docs.
+- Python ConduytOLED: `begin(width=128, height=64, i2c_addr=0x3C)`, `text(x, y, size, text)`, `draw_rect(x, y, w, h, fill)`, `draw_bitmap` — matches.
+- Python ConduytStepper: `config(step_pin, dir_pin, en_pin, steps_per_rev=200)`, `move(steps, speed_hz)`, `move_to(position, speed_hz)` — matches.
+- Python ConduytEncoder: `attach(pin_a, pin_b)`, `read`, `reset` — matches.
+- Python ConduytPID: `config(kp, ki, kd)`, `set_target(value)`, `set_input(pin)`, `set_output(pin)`, `enable`, `disable` — matches.
+- Python ConduytOTA: `flash(firmware, *, chunk_size=None, on_progress=None, sha256=None)` — matches.
+- Python `MQTTTransport(broker, port=1883, device_id, username=None, password=None)` — matches.
+- Python `SerialTransport(port, baudrate=115200)` — matches.
+
+## Constants verified
+- `DS_TYPE` values match between firmware C and JS source (BOOL=0x01, INT8=0x02, ..., BYTES=0x09).
+- `CONDUYT_CMD_*` C macros (e.g. `CONDUYT_CMD_PING=0x01`, `CONDUYT_CMD_HELLO=0x02`, etc., 21 total) verified to match `firmware-api.md` lines 282-302.
+
+## Verified MQTT topic structure (genuinely complex)
+- **Firmware** (ConduytMQTT.h): subscribes to `conduyt/{id}/cmd/#` (catches all subtopics, including `cmd` itself) and `conduyt/{id}/ds/+/cmd`. Publishes to `evt/{typeHex}`, `hello`, `ds/<name>/evt`, `status`.
+- **JS host**: publishes to `cmd/{typeHex}`. Subscribes to `evt/#`, `hello`, `status`, `ds/+/evt`.
+- **Python host**: publishes to `cmd` (no /typeHex suffix). Subscribes to `evt/#`. (Drops the dedicated `ds/+/evt` and `status` subscriptions.)
+
+The doc's topic structure table (`cmd/{typeHex}`, `evt/{typeHex}`, `hello`, `status`, `ds/{name}/cmd`, `ds/{name}/evt`) accurately describes the **protocol-level topic landscape**, even though the JS and Python SDKs use different conventions on the cmd side. Not strict drift since firmware accepts both forms via `cmd/#` wildcard.
+
+## Verification (post seventh pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
