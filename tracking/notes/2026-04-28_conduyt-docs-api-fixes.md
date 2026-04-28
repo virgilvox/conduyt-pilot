@@ -362,7 +362,30 @@ Same fictional argument as flash-ota.md, fixed identically.
 - **conduyt repo files modified**: 14 across 8 audit passes (~360 lines changed total). Three new this pass: `connect-ble.md`, `flash-ota.md`, `sdks/swift.md`.
 - **conduyt-pilot v2 bundle**: 243 train + 25 eval, refreshed with corrected docs.
 
-## Verification (post eighth pass)
+## Ninth-pass findings — WASM SDK + cross-doc consistency + broker truth
+
+User asked again. This pass moved into surfaces I had not yet touched: the WASM SDK doc, broker source, and cross-doc consistency claims.
+
+### Found and fixed
+1. **`sdks/wasm.md` had a wrong constant value** — `conduyt.PROTOCOL_VERSION();    // 1` claimed protocol version 1. Verified against `sdk/wasm/src/lib.rs` which exports `PROTOCOL_VERSION` from the Rust core (`pub const PROTOCOL_VERSION: u8 = 0x02`). Every other doc and SDK reports 2. Fixed: `// 2 (matches CONDUYT protocol v0.2)`.
+
+2. **`how-to/connect-mqtt.md` QoS strategy table was a documentation lie** — claimed per-packet-type QoS routing (PIN_EVENT=0, OTA_CHUNK=2, etc.) but neither the JS SDK nor the Python SDK does this. Both publish at uniform QoS=1 (per `qos = this._options.qos ?? 1` in `mqtt.ts` and identical pattern in Python). The broker is plain Mosquitto with no custom topic-aware QoS rules. Fixed: relabeled the table as "Recommended QoS" with a note explaining current uniform behavior.
+
+3. **`how-to/connect-mqtt.md` falsely claimed disconnect events** — said "Host SDKs subscribe to the `status` topic and fire disconnect events automatically." Verified that JS subscribes to status but the SDK has no API to surface a disconnect event from it. Python doesn't even subscribe to status. Fixed with accurate description of what each SDK actually does and how to roll your own.
+
+### Verified clean
+- **Board JSONs in pilot vs conduyt YAMLs**: cross-checked I2C defaults for esp32-s3-devkitc-1 (8/9 ✓), raspberry-pi-pico (4/5 ✓), arduino-uno-r4-wifi (18/19 ✓). The XIAO ESP32-C3 uses 6/7 (different from generic ESP32-C3 DevKitM 8/9), correctly captured per the XIAO board's specific pinout.
+- **Broker** is plain Mosquitto with `allow_anonymous true`, listeners on 1883/9001, `message_size_limit 65535`. No custom topic translation, no plugins. The doc accurately describes this.
+- **MAGIC bytes** (`0x43 0x44`): consistent everywhere (only mentioned in packet-structure.md).
+- **PROTOCOL_VERSION**: now consistent across all 6 SDK docs (JS, Python, Go, Rust, Swift, WASM) — all agree on 2.
+- **WASM SDK code examples** otherwise accurate: `init()`, `getCMD/EVT/ERR`, `makePacket`, `wireEncode/Decode`, `cobsEncode/Decode`, `wireFindPacket`, `errName`, `HEADER_SIZE` all real exports per `sdk/wasm/src/lib.rs`.
+
+### Out-of-scope (remaining genuine surface)
+- **Cross-doc consistency on COBS framing claims** between packet-structure.md and transport-architecture.md (they should agree; haven't diff'd word-for-word).
+- **Firmware C++ runtime behavior** (e.g., does `device.poll()` actually pump the OTA orchestrator? Does each module's handler dispatch the documented command bytes?). Verifiable only by running.
+- **`reference/firmware-api.md` deeper details** (I checked it has correct `CONDUYT_CMD_*` macros; haven't audited every claim about `ConduytPayloadReader`/`Writer` methods against `firmware/src/conduyt/ConduytPayload.h`).
+
+## Verification (post ninth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
