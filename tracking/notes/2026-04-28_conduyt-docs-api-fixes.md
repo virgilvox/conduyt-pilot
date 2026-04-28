@@ -14,7 +14,9 @@ All API claims were checked against the live source files:
 - `../conduyt/sdk/js/src/{ota,reconnect}.ts` (ConduytOTA, ReconnectTransport)
 - `../conduyt/firmware/src/Conduyt.h` (firmware constant aliases)
 
-## Files modified (9)
+## Files modified (10) — covers two audit passes
+
+The first pass (this section's first half) caught the obvious drift in module imports/constructors and the worst transport-interface mismatch. A second pass (after the user asked me to ultrathink + re-audit) caught additional issues in the SDK landing page, the BLE service UUIDs, and the NeoPixel command table. All of them documented below in the order they were fixed.
 
 ### `site/content/docs/modules/servo.md`
 **Before:**
@@ -92,6 +94,74 @@ Three significant fixes:
 
 ### `site/content/docs/tutorials/what-is-conduyt.md`
 - Same `CONDUYT_TYPE_FLOAT32` -> `CONDUYT_FLOAT32` fix in firmware example block.
+
+---
+
+## Second-pass findings (re-audit)
+
+### `site/content/docs/sdks/javascript.md` (significant drift)
+The SDK landing page had multiple fabricated APIs that don't exist in `device.ts`:
+
+| Doc said | Actual API |
+|---|---|
+| `device.pinMode(13, 'output')` | `device.pin(13).mode('output')` |
+| `device.pinWrite(13, 1)` | `device.pin(13).write(1)` |
+| `device.firmwareName` | `device.capabilities.firmwareName` |
+| `device.onDatastream(name, cb)` | `for await (...) of device.datastream(name).subscribe()` |
+| `device.streamStart()` | not a JS method (STREAM_START is a wire-level command for raw pin streaming, not an SDK method) |
+
+Also fixed: the transports table claimed BLE/MQTT/WebSocket/CLASP were "planned" when they all already ship under `conduyt-js/transports/<name>`. Updated the table to list all seven transports (Serial, WebSerial, BLE, MQTT, WebSocket, CLASP, Mock).
+
+Also fixed: the WebSerial example was missing `await port.open({ baudRate })` before `ConduytDevice.connect`, which fails silently on real hardware.
+
+### `site/content/docs/how-to/connect-ble.md` (BLE UUID drift)
+Doc claimed CONDUYT uses Nordic UART Service (NUS) with UUIDs `6E400001-...` / `6E400002-...` / `6E400003-...`. **This is completely wrong.** Both the firmware (`firmware/src/conduyt/transport/ConduytBLE.h`) and the JS SDK (`sdk/js/src/transports/ble.ts`) use CONDUYT-specific UUIDs:
+
+| Characteristic | Actual UUID |
+|---|---|
+| Service | `0000cd01-0000-1000-8000-00805f9b34fb` |
+| TX (notify) | `0000cd02-0000-1000-8000-00805f9b34fb` |
+| RX (write)  | `0000cd03-0000-1000-8000-00805f9b34fb` |
+
+This bug would have made any custom BLE central (raw CoreBluetooth on iOS, native Android, MicroPython BLE) fail at the GATT discovery step. Fixed in two places: the BLE transport details table, and the "Using CoreBluetooth directly" section. Added a note that the JS `BLETransport` constructor accepts UUID overrides via `{ serviceUUID, txCharUUID, rxCharUUID }` for non-default firmwares.
+
+Also updated a code comment that still referred to "NUS service" filtering.
+
+### `site/content/docs/modules/neopixel.md` (command table drift)
+The NeoPixel command reference table had three issues compared to the JS source (`sdk/js/src/modules/neopixel.ts`):
+
+1. **`Begin (0x01)` payload was missing the `type` byte.** Source sends 4 bytes `pin(1) + count(2) + type(1)`; doc said only `pin(1) + count(2)`.
+2. **`SetPixelW (0x03)` was fabricated.** Command 0x03 in source is actually `setRange(start, count, r, g, b)`. The "RGBW set pixel" path is just `setPixel` with a 6th byte appended (firmware dispatches by payload length).
+3. **`setRange` was missing entirely** from the table — a useful command for solid-color runs.
+
+Fixed: rewrote the command table to match source. Begin shows the type byte. Command 0x02 (SetPixel) shows it accepts both 5-byte (RGB) and 6-byte (RGBW) payloads. Command 0x03 is now correctly `SetRange` with payload `start(2) + count(2) + r(1) + g(1) + b(1)`. Fill (0x04) similarly shows it accepts 3 or 4 bytes for RGB or RGBW.
+
+Updated the "Notes" section: removed the misleading mention of `setPixelW()` (no such method) and added a one-line note about `setRange` for runs.
+
+## Verification (post second pass)
+
+Comprehensive grep across audited docs for **every** drift pattern I've found:
+
+```
+NO DRIFT REMAINING in audited files.
+```
+
+Patterns scanned for:
+- `import { Servo|NeoPixel|DHT }` (drifted module imports)
+- `new Servo|NeoPixel|DHT(...)` (drifted constructors)
+- `device.i2cWrite|i2cRead` (fabricated device-level i2c methods)
+- `device.pinMode|pinWrite` (fabricated pin convenience methods)
+- `device.firmwareName` (wrong property access path)
+- `device.onDatastream` / `device.streamStart` (fabricated)
+- `.on('disconnect', ...)` (fabricated event)
+- `open()|onPacket(` (old transport interface names)
+- `6E400001|6E400002|6E400003` (wrong NUS UUIDs)
+
+Module command tables verified row-by-row against the seven module .ts source files. All command IDs and payload structures match.
+
+Firmware-side methods referenced in docs (`device.declarePinCaps`, `device.declareI2cBus`, `device.declareSpiBus`, `device.addModule`, `device.addDatastream`, `device.onDatastreamWrite`, `device.writeDatastream`, `device.begin`, `device.poll`) all confirmed present in `firmware/src/conduyt/ConduytDevice.h`.
+
+Constants (`CONDUYT_FLOAT32` and friends, error codes, packet types, PIN_CAP bits) verified against `firmware/src/conduyt/core/conduyt_constants.h` and `sdk/js/src/core/constants.ts`.
 
 ## Files NOT touched (and why)
 
