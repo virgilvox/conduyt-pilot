@@ -2,6 +2,10 @@
 
 Fine-tune toolkit for a small embedded-coding model. Phase 1 builds a clean training dataset of (system, user, assistant) chat triples covering 8 representative MCU boards across Arduino, PlatformIO, ESP-IDF, Conduyt firmware, and conduyt-js. Phase 2 runs an Unsloth + QLoRA fine-tune of `Qwen2.5-Coder-1.5B-Instruct` on Kaggle's free T4 x2 tier, then exports GGUF (Ollama / llama.cpp / Pi) and MLC (browser via WebLLM).
 
+**Two dataset versions ship in this repo:**
+- `conduyt-pilot-data-v1.zip` (151 examples) — initial corpus.
+- `conduyt-pilot-data-v2.zip` (243 examples) — adds 30 multi-turn conduyt-js conversations, 20 Arduino-vocab override examples, and 10 API doc-style references. **Use v2** unless you have a specific reason to revisit v1.
+
 ## Setup
 
 ```bash
@@ -23,23 +27,21 @@ prompts/                     synthesis system + template prompts
 scripts/                     pipeline (01-05) + local GGUF test (06)
 kaggle/                      train.ipynb + convert_mlc.ipynb + troubleshooting
 tracking/handoffs/           session handoffs
-conduyt-pilot-data-v1.zip    the v1 Kaggle bundle (gitignored)
+conduyt-pilot-data-v2.zip    the current Kaggle bundle (gitignored)
 ```
 
 ---
 
 # Run the fine-tune (the part you do yourself in Kaggle)
 
-The repo ships with `conduyt-pilot-data-v1.zip` already built (~48 KB, 151 examples). The path below uses that bundle. If you've changed seeds or added synthetic, see "Regenerate the dataset" further down.
+The repo ships with `conduyt-pilot-data-v2.zip` already built (~290 KB, 243 examples).
 
 ## What's in the zip
 
-`conduyt-pilot-data-v1.zip` has 11 files totalling ~190 KB:
-
 ```
-metadata.json                                # dataset info: counts, schema, version
-train.jsonl                                  # 137 chat-format examples (~160 KB)
-eval.jsonl                                   #  14 chat-format examples (~16 KB)
+metadata.json                               # dataset info: counts, schema, version
+train.jsonl                                 # 220 chat-format examples
+eval.jsonl                                  #  23 chat-format examples
 boards/adafruit-feather-esp32-s3.json
 boards/adafruit-feather-nrf52840-sense.json
 boards/arduino-nano-33-ble.json
@@ -53,8 +55,8 @@ boards/seeed-xiao-esp32-c3.json
 Verify it's there:
 
 ```bash
-ls -lh conduyt-pilot-data-v1.zip
-unzip -l conduyt-pilot-data-v1.zip
+ls -lh conduyt-pilot-data-v2.zip
+unzip -l conduyt-pilot-data-v2.zip
 ```
 
 ## Step 1: get a Hugging Face write token
@@ -64,21 +66,21 @@ unzip -l conduyt-pilot-data-v1.zip
 3. Name it something like `conduyt-pilot-kaggle`
 4. Copy the `hf_...` string. You'll paste it into Kaggle Secrets in step 3.
 
-The notebooks use this token to push four repos under your HF account on first run (they create the repos via `create_repo(exist_ok=True)`):
-- `virgilvox/conduyt-pilot-1.5b-lora` (LoRA adapter)
-- `virgilvox/conduyt-pilot-1.5b-merged` (merged 16-bit model, used by the MLC step)
-- `virgilvox/conduyt-pilot-1.5b-gguf` (Q4_K_M, Q5_K_M, Q8_0)
-- `virgilvox/conduyt-pilot-1.5b-MLC` (q4f16_1 for WebLLM)
+The notebooks push to four HF repos under `virgilvox/` on first run (they use `create_repo(exist_ok=True)`):
+- `virgilvox/conduyt-pilot-1.5b-v2-lora` (LoRA adapter)
+- `virgilvox/conduyt-pilot-1.5b-v2-merged` (merged 16-bit, used by the MLC step)
+- `virgilvox/conduyt-pilot-1.5b-v2-gguf` (Q4_K_M, Q5_K_M, Q8_0)
+- `virgilvox/conduyt-pilot-1.5b-v2-MLC` (q4f16_1 for WebLLM)
 
 ## Step 2: upload the dataset to Kaggle
 
 1. https://www.kaggle.com/datasets -> **New Dataset**
-2. Drag `conduyt-pilot-data-v1.zip` into the upload area. Kaggle will unpack it; the dataset ends up with `train.jsonl`, `eval.jsonl`, and `boards/` as siblings.
-3. **Title:** `conduyt-pilot-data` (the dataset slug must be `conduyt-pilot-data` so the notebook's `/kaggle/input/conduyt-pilot-data/` mount works)
+2. Drag `conduyt-pilot-data-v2.zip` into the upload area. Kaggle will unpack it.
+3. **Title:** `conduyt-pilot-data` (the dataset slug must be `conduyt-pilot-data`)
 4. **Visibility:** Private
 5. Create
 
-Bump the dataset version each time you regenerate locally and re-upload; Kaggle keeps version history.
+**Heads-up about the mount path:** Kaggle in 2026 mounts attached datasets at `/kaggle/input/datasets/<your-kaggle-username>/<slug>/`, not the legacy `/kaggle/input/<slug>/`. The train notebook auto-discovers either layout via `glob /kaggle/input/**/train.jsonl`, so you don't need to hardcode the path. If you change the auto-discover logic, remember the path includes your kaggle username, which can differ from your HF username.
 
 ## Step 3: create the train notebook on Kaggle
 
@@ -88,75 +90,61 @@ Bump the dataset version each time you regenerate locally and re-upload; Kaggle 
    - **Accelerator:** GPU T4 x2
    - **Internet:** ON
    - **Persistence:** ON
-4. **Add data** (right panel) -> search for the dataset you uploaded (`conduyt-pilot-data`) -> Add. It mounts at `/kaggle/input/conduyt-pilot-data/`.
+4. **Add data** (right panel) -> search for the dataset you uploaded (`conduyt-pilot-data`) -> Add.
 5. **Add-ons -> Secrets** (top menu):
    - Add `HF_TOKEN` with the value from step 1
-   - Optional: add `WANDB_API_KEY` if you want training logs in wandb (otherwise `report_to=none`)
+   - Optional: `WANDB_API_KEY` for run logging
+6. **Edit the HF repo names** if your HF user isn't `virgilvox`. Search the notebook for `virgilvox` and replace.
 
 ## Step 4: run train.ipynb
 
-Click **Run All**. Expected wall time: ~30 to 60 minutes for 137 examples x 3 epochs on a T4.
+Click **Run All**. Expected wall time on T4 x2: roughly **45-75 minutes** for 220 examples × 5 epochs on the 1.5B base. v2 takes longer than v1 (which was 30-60 min) because of more data and more epochs.
 
 What happens, in order:
-1. Pinned installs (`unsloth==2026.4.8`, `transformers==4.56.2`, `trl==0.22.2 --no-deps`, etc.)
-2. Loads `HF_TOKEN` and (optionally) `WANDB_API_KEY` from Kaggle Secrets
-3. Loads `train.jsonl` + `eval.jsonl` from the mounted dataset
-4. Loads `unsloth/Qwen2.5-Coder-1.5B-Instruct` in 4-bit
-5. Applies LoRA (r=16, alpha=32, all attention + MLP target modules)
-6. Formats with the Qwen2.5 chat template
-7. Trains with SFTTrainer (batch 2, grad-accum 4, 3 epochs, fp16)
-8. Saves the LoRA adapter to `/kaggle/working/adapter` and pushes it to `virgilvox/conduyt-pilot-1.5b-lora`
-9. Runs 5 sanity inference probes (eyeball the output here)
-10. Merges LoRA into the base weights and saves the full-precision model to `/kaggle/working/merged`
-11. Exports GGUF at q4_k_m / q5_k_m / q8_0 and pushes the three files to `virgilvox/conduyt-pilot-1.5b-gguf`
+1. Pinned installs (`unsloth==2026.4.8`, `transformers==4.56.2`, `trl==0.22.2 --no-deps`, etc.). `huggingface_hub` is intentionally NOT pinned (transformers 4.56.2 caps it at `<1.0`; v1's pin to 1.12.0 broke the install).
+2. Loads `HF_TOKEN` and (optionally) `WANDB_API_KEY` from Kaggle Secrets.
+3. **Auto-discovers** the dataset path under `/kaggle/input/**/train.jsonl`.
+4. Loads `unsloth/Qwen2.5-Coder-1.5B-Instruct` in 4-bit.
+5. Applies LoRA: `r=32, lora_alpha=64, dropout=0` (v2; was 16/32/0.05 in v1). Bigger r gives more override capacity against the base model's Arduino prior. dropout=0 enables Unsloth's fast-patching kernels (~2-3x faster than dropout>0).
+6. Formats with the Qwen2.5 chat template via `tokenizer.apply_chat_template`.
+7. Trains with SFTTrainer: bs=2, grad-accum=4 (effective 8), **5 epochs** (was 3), 2e-4 LR, fp16 (T4-required).
+8. Saves the LoRA adapter to `/kaggle/working/adapter` and pushes it to `virgilvox/conduyt-pilot-1.5b-v2-lora`.
+9. Runs 5 sanity inference probes (eyeball the output here for voice + API correctness).
+10. Merges LoRA into the base weights and saves at `/kaggle/working/merged`.
+11. Exports GGUF at q4_k_m / q5_k_m / q8_0 and pushes the three files to `virgilvox/conduyt-pilot-1.5b-v2-gguf`.
+12. **Auto-pushes the merged model** to `virgilvox/conduyt-pilot-1.5b-v2-merged`. This bridges to `convert_mlc.ipynb`, which runs in a fresh kernel that can't see `/kaggle/working/`.
 
-When it finishes, you'll have the LoRA + GGUF on HF, and the merged model still sitting at `/kaggle/working/merged` inside the kernel.
+When it finishes you'll have lora + gguf + merged on HF, ready for the MLC step.
 
-## Step 5: bridge train -> MLC (push the merged model to HF)
-
-The MLC convert notebook runs in a fresh kernel that can't see `/kaggle/working/merged` from the train kernel. Push the merged model to HF before moving on.
-
-In the train notebook, add a final cell (or run it in the same kernel after step 4 finishes):
-
-```python
-from huggingface_hub import HfApi, create_repo
-import os
-
-MERGED_REPO = "virgilvox/conduyt-pilot-1.5b-merged"
-api = HfApi(token=os.environ["HF_TOKEN"])
-create_repo(MERGED_REPO, exist_ok=True, token=os.environ["HF_TOKEN"], private=True)
-api.upload_folder(
-    folder_path="/kaggle/working/merged",
-    repo_id=MERGED_REPO,
-    repo_type="model",
-)
-print("merged pushed to https://huggingface.co/" + MERGED_REPO)
-```
-
-## Step 6: run convert_mlc.ipynb
+## Step 5: run convert_mlc.ipynb
 
 1. https://www.kaggle.com/code -> **New Notebook** -> Import `kaggle/convert_mlc.ipynb`
-2. Accelerator: **GPU T4** (single is fine; conversion is mostly CPU-bound)
+2. Accelerator: **GPU T4** (single is fine; we use CPU MLC wheels anyway)
 3. Internet: ON, Persistence: ON
-4. Add-ons -> Secrets -> `HF_TOKEN` (same token as before)
-5. **Run All**. Wall time: ~10 to 15 minutes (most of it is the upload).
+4. Add-ons -> Secrets -> `HF_TOKEN`
+5. **Run All**. Wall time: ~10-15 minutes (most is the upload).
+
+**Three known fixes baked in:**
+- **CPU-only MLC wheels** (`mlc-{llm,ai}-nightly-cpu`) instead of cu* variants. The cu128 nightlies in 2026-04 had a TVM `tirx`/`s_tir` regression and a `libcudart.so.12` link issue at import time. CPU wheels have no CUDA dep and just work.
+- **`python -m mlc_llm`** invocation instead of bare `mlc_llm`. Kaggle's PATH doesn't pick up pip entry-point scripts.
+- **`--device cpu`** for `convert_weight`. The math is the same; this side-steps the CUDA codepath that was crashing.
 
 This produces:
-- `virgilvox/conduyt-pilot-1.5b-MLC` on HF (weights + config for WebLLM)
+- `virgilvox/conduyt-pilot-1.5b-v2-MLC` on HF (weights + config for WebLLM)
 - A printed `appConfig` snippet for `@mlc-ai/web-llm`. Drop it into your client-side bootstrap.
 
-## Step 7: smoke-test the GGUF locally
+## Step 6: smoke-test the GGUF locally
 
 Back on your machine:
 
 ```bash
 uv sync
-uv run scripts/06_test_local.py
+uv run scripts/06_test_local.py --finetune-repo virgilvox/conduyt-pilot-1.5b-v2-gguf
 ```
 
-This pulls the Q4_K_M GGUF from `virgilvox/conduyt-pilot-1.5b-gguf` and the matching base GGUF from Qwen, runs 5 hardcoded probes plus 10 random prompts from `data/processed/eval.jsonl`, and writes a side-by-side comparison report to `tracking/notes/local_eval_results.md`.
+This pulls the Q4_K_M GGUF from `virgilvox/conduyt-pilot-1.5b-v2-gguf` and the matching base GGUF from Qwen, runs 5 hardcoded probes plus 10 random prompts from `data/processed/eval.jsonl`, and writes a side-by-side comparison report to `tracking/notes/local_eval_results.md`.
 
-If the fine-tuned column reads in your voice and the base column reads like generic LLM output, the train worked.
+If the fine-tuned column reads in your voice and uses the actual conduyt-js API (`device.pin().mode()`, `new ConduytServo(device); await servo.attach(N)`) while the base column reads like generic Arduino-flavored JS, the train worked.
 
 Flags:
 
@@ -172,20 +160,19 @@ uv run scripts/06_test_local.py --n-eval 25        # more eval probes
 
 | HF repo | Use it for |
 |---|---|
-| `virgilvox/conduyt-pilot-1.5b-gguf` | `ollama create conduyt -f Modelfile && ollama run conduyt`. Or `llama.cpp` directly. Or LM Studio. |
-| `virgilvox/conduyt-pilot-1.5b-MLC` | Browser inference with WebGPU via `@mlc-ai/web-llm`. |
-| `virgilvox/conduyt-pilot-1.5b-lora` | Low-storage distribution: anyone with the base model can apply this 30 MB adapter. |
-| `virgilvox/conduyt-pilot-1.5b-merged` | Anywhere HF transformers / vLLM runs. |
+| `virgilvox/conduyt-pilot-1.5b-v2-gguf` | `ollama create conduyt -f Modelfile && ollama run conduyt`. Or `llama.cpp` directly. Or LM Studio. |
+| `virgilvox/conduyt-pilot-1.5b-v2-MLC` | Browser inference with WebGPU via `@mlc-ai/web-llm`. |
+| `virgilvox/conduyt-pilot-1.5b-v2-lora` | Low-storage distribution: anyone with the base model can apply this ~50 MB adapter. |
+| `virgilvox/conduyt-pilot-1.5b-v2-merged` | Anywhere HF transformers / vLLM runs. |
 
 ---
 
 # Regenerate the dataset (only if you've changed seeds or want more synthetic)
 
-The pipeline is five scripts, each writing a typed output:
+The pipeline is six scripts, each writing a typed output. Note: you can have Claude Code generate synthetic examples directly in-conversation (no API spend), or run the script against the live Anthropic API.
 
 ```bash
 # 1. (optional) Generate more synthetic via the live Anthropic API.
-#    Skip this if you'd rather have Claude Code generate examples in-conversation.
 export ANTHROPIC_API_KEY=sk-ant-...
 uv run scripts/01_generate_synthetic.py --dry-run                 # inspect first
 uv run scripts/01_generate_synthetic.py --limit 300 --max-cost-usd 2.50
@@ -206,11 +193,34 @@ uv run scripts/05_build_kaggle_dataset.py
 
 After regenerating, re-upload the new zip to Kaggle as a new version of the `conduyt-pilot-data` dataset.
 
+The validator (script 02) accepts both single-turn (3 messages: system/user/assistant) and multi-turn (5+ messages with proper alternation). Multi-turn examples teach the model to maintain API consistency across follow-up prompts.
+
+---
+
+# v1 vs v2: what changed and why
+
+The v1 fine-tune (151 examples, r=16, 3 epochs) shipped end-to-end (Kaggle -> GGUF -> MLC -> browser inference) but produced incorrect conduyt-js code: it hallucinated a `device.arduino.*` namespace, mixed Arduino C++ idioms (`millis`, `delay`, `map`) into JS responses, and lost API consistency across multi-turn conversations.
+
+Diagnosis: only ~12% of v1 training data was conduyt-js, all single-turn. The base Qwen2.5-Coder-1.5B's Arduino prior is heavily encoded; r=16 over 3 epochs wasn't enough to override it.
+
+v2 changes:
+- **+93 conduyt-js-focused examples**: 30 single-turn covering every transport / module / error class, 30 multi-turn conversations where turn 2 builds on turn 1 (the exact failure mode), 20 Arduino-vocab override examples (user uses `digitalWrite`, `millis`, `delay`, etc.; assistant responds with conduyt-js API), 10 API doc-style examples.
+- **All conduyt-js examples verified against `../conduyt/sdk/js/src/` source.** v1 had API drift from the README; v2 is grounded in the actual class definitions.
+- **r=32, alpha=64** (was 16/32). Doubles the LoRA's override capacity.
+- **5 epochs** (was 3).
+- **dropout=0** (was 0.05) so Unsloth's fast-patching kernels engage.
+
+After v2, expect the fine-tune to use the real conduyt-js API:
+- `import { ConduytServo } from 'conduyt-js/modules/servo'`
+- `new ConduytServo(device); await servo.attach(N); await servo.write(angle)`
+- `device.pin(N).mode('output'); await device.pin(N).write(v)`
+- `for await (const v of device.pin('A0').subscribe({ intervalMs: 100 }))`
+
 ---
 
 # Troubleshooting
 
-See `kaggle/README.md` for failure modes specific to Kaggle (T4 fp16 quirks, OOM during merge, MLC CUDA wheel mismatches).
+See `kaggle/README.md` for failure modes and pin rationale.
 
 ## Project rules
 

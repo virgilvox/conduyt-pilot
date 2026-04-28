@@ -87,14 +87,22 @@ def check_example(obj: dict, token_limit: int) -> list[str]:
     issues: list[str] = []
 
     msgs = obj.get("messages")
-    if not isinstance(msgs, list) or len(msgs) != 3:
-        issues.append("schema: messages != 3")
+    if not isinstance(msgs, list) or len(msgs) < 3:
+        issues.append("schema: messages < 3")
+        return issues
+    # Accept system + (user + assistant)+ alternation. Length must be odd:
+    # 3 (single-turn), 5 (one follow-up), 7 (two follow-ups), etc.
+    if len(msgs) % 2 != 1:
+        issues.append(f"schema: messages length {len(msgs)} is even; should be odd (system + N user/assistant pairs)")
         return issues
 
-    expected_roles = ["system", "user", "assistant"]
     actual_roles = [m.get("role") for m in msgs]
-    if actual_roles != expected_roles:
-        issues.append(f"schema: roles {actual_roles} != {expected_roles}")
+    if actual_roles[0] != "system":
+        issues.append(f"schema: first message role is {actual_roles[0]!r}, expected 'system'")
+        return issues
+    expected_alt = ["user" if i % 2 == 1 else "assistant" for i in range(1, len(msgs))]
+    if actual_roles[1:] != expected_alt:
+        issues.append(f"schema: roles after system must alternate user/assistant, got {actual_roles[1:]}")
         return issues
 
     for m in msgs:
@@ -112,9 +120,10 @@ def check_example(obj: dict, token_limit: int) -> list[str]:
     if EMOJI_RE.search(joined):
         issues.append("banned: emoji")
 
-    assistant_text = msgs[2]["content"]
-    if count_unbalanced_fences(assistant_text):
-        issues.append("code fences: unbalanced ```")
+    # Check fences in every assistant message (multi-turn has more than one).
+    for i, m in enumerate(msgs):
+        if m.get("role") == "assistant" and count_unbalanced_fences(m["content"]):
+            issues.append(f"code fences: unbalanced ``` in assistant msg #{i}")
 
     if estimate_tokens(joined) > token_limit:
         issues.append(f"size: estimated tokens > {token_limit}")
@@ -148,10 +157,13 @@ def validate_file(path: Path, token_limit: int, out_dir: Path) -> dict:
 
             issues = check_example(obj, token_limit=token_limit)
 
+            # Hash the FIRST user message for intra-file dedup. Multi-turn
+            # examples can legitimately share follow-up phrasings, but the
+            # opening user message should be unique.
             user_text = obj["messages"][1]["content"]
             user_hash = normalize_user_text(user_text)
             if user_hash in seen_user_hashes:
-                issues.append("dup: duplicate user message in this file")
+                issues.append("dup: duplicate first-user message in this file")
             else:
                 seen_user_hashes.add(user_hash)
 
