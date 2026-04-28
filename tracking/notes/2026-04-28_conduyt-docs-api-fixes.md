@@ -385,7 +385,31 @@ User asked again. This pass moved into surfaces I had not yet touched: the WASM 
 - **Firmware C++ runtime behavior** (e.g., does `device.poll()` actually pump the OTA orchestrator? Does each module's handler dispatch the documented command bytes?). Verifiable only by running.
 - **`reference/firmware-api.md` deeper details** (I checked it has correct `CONDUYT_CMD_*` macros; haven't audited every claim about `ConduytPayloadReader`/`Writer` methods against `firmware/src/conduyt/ConduytPayload.h`).
 
-## Verification (post ninth pass)
+## Tenth-pass findings — `firmware-api.md` deep audit
+
+User pushed for more. Audited `reference/firmware-api.md` line-by-line against the firmware C++ headers (`firmware/src/conduyt/transport/*.h`, `ConduytPayload.h`, `ConduytDevice.h`, `ConduytModuleBase.h`).
+
+### Found and fixed (5 drift sites)
+
+1. **`readUint8()` typo** in the Datastream Write Callback prose (line 93). Real method is `readUInt8()` (capital I). Source: `ConduytPayload.h` line 29: `uint8_t readUInt8()`. Anyone copy-pasting that name wouldn't compile.
+
+2. **"BLE (NUS)" claim** in transport table (line 117). Fixed to plain "BLE" — CONDUYT BLE uses its own GATT service (`0000cd0[123]-...`), not Nordic UART Service. Same root cause as the `connect-ble.md` and `packet-structure.md` fixes from earlier passes; the firmware-api transport table still had the old wording.
+
+3. **`ConduytTCP` labeled "TCP Server"** (transport table + construction example). The actual constructor `ConduytTCP(Client &client, const char *host, uint16_t port)` is a **TCP client** — it connects out to a server at `host:port`. The doc had it labeled as "TCP Server" and the example used `ConduytTCP transport(3000); // listen port` (fictional). Both fixed: relabeled "TCP Client" with a working example `ConduytTCP transport(tcpClient, "10.0.0.5", 3000)`.
+
+4. **`ConduytUSBSerial transport(SerialUSB, 115200);`** (line 128). Wrong arity. Actual signature: `ConduytUSBSerial(uint32_t baud = 115200, uint32_t timeoutMs = 5000)` — only baud + optional timeout. The host Serial object is referenced internally. Doc passed a Serial argument that doesn't exist.
+
+5. **`ConduytCLASP transport;`** (line 141). No-args wouldn't compile. Required signature: `ConduytCLASP(const char *relayUrl, const char *channel, const char *token = nullptr)` — two required args. Fixed with a working example.
+
+### Verified clean
+- **`ConduytPayloadReader`** methods used in docs (`readBool`, `readUInt8`, `readInt8`, `readUInt16`, `readInt16`, `readUInt32`, `readInt32`, `readFloat32`, `readBytes`) all exist with correct signatures in `ConduytPayload.h`.
+- **`ConduytPayloadWriter`** methods used in docs (`writeBool`, `writeUInt8`, `writeUInt16`, `writeUInt32`, `writeFloat32`, `writeBytes`, `writeString`, `length()`) all exist.
+- **`ConduytDevice`** firmware constructor: doc claim `ConduytDevice device("name", "version", transport)` matches source `ConduytDevice(const char *name, const char *version, ConduytTransport &transport)`.
+- **`ConduytModuleBase`** virtual methods (name, versionMajor/Minor, begin, handle, poll, pinCount, pins) match source line-for-line.
+- **All other transport constructors** (Serial, MQTT, BLE) verified against their `firmware/src/conduyt/transport/*.h` source files.
+- **Built-in modules section** (servo, neopixel, encoder, stepper, dht, oled, pid command tables) consistent with the JS-side wrapper command IDs verified in earlier passes.
+
+## Verification (post tenth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
