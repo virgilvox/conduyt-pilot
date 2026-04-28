@@ -1,0 +1,33 @@
+{
+  "_sources": [
+    "https://learn.adafruit.com/adafruit-esp32-s3-feather/pinouts",
+    "https://github.com/espressif/arduino-esp32 variants/adafruit_feather_esp32s3/pins_arduino.h",
+    "https://www.adafruit.com/product/5477"
+  ],
+  "_notes": "PID 5477 is the 4MB flash + 2MB PSRAM variant (NOT the 8MB no-PSRAM PID 5323). NeoPixel on GPIO33 with power gate on GPIO21. STEMMA QT I2C power on GPIO7. A0-A4 sit on ADC2 (WiFi-conflict prone), A5 on ADC1.",
+  "id": "adafruit-feather-esp32-s3",
+  "name": "Adafruit Feather ESP32-S3 (4MB Flash 2MB PSRAM)",
+  "mcu": "ESP32-S3",
+  "ram_kb": 512,
+  "flash_kb": 4096,
+  "gpio_numbering": "GPIOn (Arduino aliases A0-A5, D5-D13 also defined)",
+  "gpio_pins": [5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 33, 35, 36, 37, 38, 39, 42],
+  "adc_pins": [8, 14, 15, 16, 17, 18],
+  "i2c_default": {"sda": 3, "scl": 4},
+  "spi_default": {"sck": 36, "miso": 37, "mosi": 35, "cs": 42},
+  "uart_default": {"tx": 39, "rx": 38},
+  "native_usb": true,
+  "wifi": true,
+  "ble": true,
+  "special": [
+    "NeoPixel on GPIO33 (power gate GPIO21)",
+    "STEMMA QT / Qwiic I2C connector (power gate GPIO7)",
+    "USB-C with native USB OTG",
+    "LiPo charger + JST 2-pin",
+    "MAX17048 LiPo monitor on I2C 0x36",
+    "User LED on GPIO13",
+    "RESET + BOOT (D0) buttons"
+  ],
+  "platformio_env": "adafruit_feather_esp32s3",
+  "arduino_fqbn": "esp32:esp32:adafruit_feather_esp32s3"
+}

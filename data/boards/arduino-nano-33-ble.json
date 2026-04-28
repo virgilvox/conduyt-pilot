@@ -1,0 +1,32 @@
+{
+  "_sources": [
+    "https://docs.arduino.cc/hardware/nano-33-ble/",
+    "https://docs.arduino.cc/resources/datasheets/ABX00030-datasheet.pdf",
+    "https://github.com/arduino/ArduinoCore-mbed variants/ARDUINO_NANO33BLE/pins_arduino.h"
+  ],
+  "_notes": "nRF52840 packaged inside the u-blox NINA-B306 module. Mbed-OS-based Arduino core. NOT 5V tolerant; all GPIOs are 3.3V only. The non-Sense Nano 33 BLE has only the LSM9DS1 IMU; no environmental sensors (those are exclusive to the Sense variant). Wire defaults to A4 (SDA, index 18) / A5 (SCL, index 19) per the variant header.",
+  "id": "arduino-nano-33-ble",
+  "name": "Arduino Nano 33 BLE",
+  "mcu": "nRF52840",
+  "ram_kb": 256,
+  "flash_kb": 1024,
+  "gpio_numbering": "Arduino digital pin numbers (D0-D13 = 0-13, A0-A7 = 14-21)",
+  "gpio_pins": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+  "adc_pins": [14, 15, 16, 17, 18, 19, 20, 21],
+  "i2c_default": {"sda": 18, "scl": 19},
+  "spi_default": {"sck": 13, "miso": 12, "mosi": 11, "cs": 10},
+  "uart_default": {"tx": 1, "rx": 0},
+  "native_usb": true,
+  "wifi": false,
+  "ble": true,
+  "special": [
+    "u-blox NINA-B306 BLE module (nRF52840-based)",
+    "LSM9DS1 9-axis IMU (accel + gyro + magnetometer) on internal I2C",
+    "RGB status LED + user LED on D13",
+    "3.3V logic only, NOT 5V tolerant",
+    "USB Micro-B with native USB CDC (mbed-os-stack)",
+    "No LiPo charger, no STEMMA QT"
+  ],
+  "platformio_env": "nano33ble",
+  "arduino_fqbn": "arduino:mbed_nano:nano33ble"
+}

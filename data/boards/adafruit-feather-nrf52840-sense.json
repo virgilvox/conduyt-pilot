@@ -1,0 +1,40 @@
+{
+  "_sources": [
+    "https://learn.adafruit.com/adafruit-feather-sense/pinouts",
+    "https://github.com/adafruit/Adafruit_nRF52_Arduino variants/feather_nrf52840_sense/variant.h",
+    "https://www.adafruit.com/product/4516"
+  ],
+  "_notes": "nRF52840 (Cortex-M4F, BLE 5.0 + Thread + Zigbee). Pin numbers below use the Adafruit nRF52 core's flat 0..47 indexing scheme (variant.h indices), where 0..31 -> P0.00..P0.31 and 32..47 -> P1.00..P1.15. ADC: SAADC has 8 analog inputs hard-wired to specific GPIOs; A0..A5 Arduino aliases map to indices 14..19 in the variant. PWM: nRF52840 has 4 PWM peripherals x 4 channels routable to any GPIO via GPIOTE/PPI. Onboard sensors are wired to the default I2C bus on SDA=22 / SCL=23.",
+  "id": "adafruit-feather-nrf52840-sense",
+  "name": "Adafruit Feather nRF52840 Sense",
+  "mcu": "nRF52840",
+  "ram_kb": 256,
+  "flash_kb": 1024,
+  "external_qspi_flash_kb": 2048,
+  "gpio_numbering": "Arduino variant indices (D0-D13, A0-A5 = D14-D19)",
+  "gpio_pins": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36],
+  "adc_pins": [14, 15, 16, 17, 18, 19],
+  "i2c_default": {"sda": 22, "scl": 23},
+  "spi_default": {"sck": 26, "miso": 24, "mosi": 25, "cs": null},
+  "uart_default": {"tx": 0, "rx": 1},
+  "native_usb": true,
+  "wifi": false,
+  "ble": true,
+  "special": [
+    "NeoPixel on D8",
+    "Red user LED on D13, blue connection LED on D4",
+    "User button on D7",
+    "LSM6DS33 (or LSM6DS3TR-C on later batches) 6-DoF IMU at I2C 0x6A",
+    "LIS3MDL 3-axis magnetometer at I2C 0x1C",
+    "SHT30 humidity + temperature at I2C 0x44",
+    "BMP280 barometric pressure at I2C 0x77",
+    "APDS9960 light/RGB color/proximity/gesture at I2C 0x39 (interrupt on D36)",
+    "MP34DT01 PDM digital microphone (CLK D34, DATA D35)",
+    "2MB external QSPI flash for filesystem / OTA",
+    "LiPo charger + JST 2-pin",
+    "USB-C with native USB CDC",
+    "STEMMA QT / Qwiic I2C connector"
+  ],
+  "platformio_env": "adafruit_feather_nrf52840_sense",
+  "arduino_fqbn": "adafruit:nrf52:feather52840sense"
+}

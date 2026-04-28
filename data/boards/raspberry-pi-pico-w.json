@@ -1,0 +1,31 @@
+{
+  "_sources": [
+    "https://datasheets.raspberrypi.com/picow/pico-w-datasheet.pdf",
+    "https://github.com/earlephilhower/arduino-pico variants/rpipicow",
+    "https://www.raspberrypi.com/documentation/microcontrollers/pico-series.html"
+  ],
+  "_notes": "Same RP2040 + 2MB QSPI flash as the regular Pico, but adds a CYW43439 wireless module (2.4GHz WiFi + BLE 5.2). The CYW43439 occupies GP23 (WL_ON power), GP24 (WL_DATA SPI), GP25 (WL_CS), GP29 (WL_CLK + VSYS sense via ADC3). LED_BUILTIN is the WL_GPIO0 pin on the CYW43439, NOT a host MCU GPIO. BLE was enabled via firmware update post-launch and is supported in both pico-sdk and earlephilhower core.",
+  "id": "raspberry-pi-pico-w",
+  "name": "Raspberry Pi Pico W (RP2040 + CYW43439)",
+  "mcu": "RP2040",
+  "ram_kb": 264,
+  "flash_kb": 2048,
+  "gpio_numbering": "GPn (RP2040 native GPIO numbers)",
+  "gpio_pins": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 26, 27, 28],
+  "adc_pins": [26, 27, 28],
+  "i2c_default": {"sda": 4, "scl": 5},
+  "spi_default": {"sck": 18, "miso": 16, "mosi": 19, "cs": 17},
+  "uart_default": {"tx": 0, "rx": 1},
+  "native_usb": true,
+  "wifi": true,
+  "ble": true,
+  "special": [
+    "CYW43439 wireless via SPI on GP23/24/25/29 (host-MCU pins are NOT user-available)",
+    "LED_BUILTIN routed to CYW43439 WL_GPIO0 (use cyw43_arch_gpio_put or digitalWrite(LED_BUILTIN))",
+    "VSYS monitor reads via ADC3 (internal channel) when WL_CS held high",
+    "BOOTSEL button",
+    "USB Micro-B device only"
+  ],
+  "platformio_env": "rpipicow",
+  "arduino_fqbn": "rp2040:rp2040:rpipicow"
+}

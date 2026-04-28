@@ -1,0 +1,36 @@
+{
+  "_sources": [
+    "https://wiki.seeedstudio.com/XIAO_ESP32C3_Getting_Started/",
+    "https://github.com/espressif/arduino-esp32 variants/XIAO_ESP32C3/pins_arduino.h"
+  ],
+  "_notes": "ESP32-C3 RISC-V single-core, WiFi 2.4GHz + BLE 5.0. ADC on GPIO 0-4; the XIAO exposes only GPIO 2/3/4/5 to header pins (D0-D3, all on ADC1). Native USB-Serial-JTAG (CDC class) on the C3 means you can flash/debug straight over USB without a separate USB-serial chip. Silkscreen labels D0-D10 are Arduino aliases mapping to underlying GPIO numbers. External ceramic antenna + U.FL connector on the bottom.",
+  "id": "seeed-xiao-esp32-c3",
+  "name": "Seeed Studio XIAO ESP32-C3",
+  "mcu": "ESP32-C3",
+  "ram_kb": 400,
+  "flash_kb": 4096,
+  "gpio_numbering": "GPIOn (silkscreen labels D0-D10 are Arduino aliases)",
+  "silkscreen_to_gpio": {
+    "D0": 2, "D1": 3, "D2": 4, "D3": 5,
+    "D4": 6, "D5": 7, "D6": 21, "D7": 20,
+    "D8": 8, "D9": 9, "D10": 10
+  },
+  "gpio_pins": [2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 21],
+  "adc_pins": [2, 3, 4, 5],
+  "i2c_default": {"sda": 6, "scl": 7},
+  "spi_default": {"sck": 8, "miso": 9, "mosi": 10, "cs": 20},
+  "uart_default": {"tx": 21, "rx": 20},
+  "native_usb": true,
+  "wifi": true,
+  "ble": true,
+  "special": [
+    "USB-C with native USB-Serial-JTAG",
+    "External ceramic antenna + U.FL switch jumper for diversity",
+    "LiPo battery charging IC (3.7V pads on the back, no JST)",
+    "BOOT (D9 / GPIO9) and RESET buttons",
+    "Charge status LED",
+    "Castellated edges for SMT mounting"
+  ],
+  "platformio_env": "seeed_xiao_esp32c3",
+  "arduino_fqbn": "esp32:esp32:XIAO_ESP32C3"
+}

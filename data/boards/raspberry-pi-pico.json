@@ -1,0 +1,30 @@
+{
+  "_sources": [
+    "https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf",
+    "https://github.com/earlephilhower/arduino-pico variants/rpipico",
+    "Conduyt protocol/boards/pico.yml"
+  ],
+  "_notes": "RP2040 SRAM is 264KB (six banks). Onboard 2MB QSPI flash. GPIO 23/24/29 reserved for board functions (SMPS PS, VBUS sense, VSYS sense). GPIO25 drives onboard LED. Every GPIO 0-22 + 26-28 is PWM- and interrupt-capable. Three ADC channels (GP26/27/28), plus internal AIN3 for VSYS/2 read.",
+  "id": "raspberry-pi-pico",
+  "name": "Raspberry Pi Pico (RP2040)",
+  "mcu": "RP2040",
+  "ram_kb": 264,
+  "flash_kb": 2048,
+  "gpio_numbering": "GPn (RP2040 native GPIO numbers)",
+  "gpio_pins": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 25, 26, 27, 28],
+  "adc_pins": [26, 27, 28],
+  "i2c_default": {"sda": 4, "scl": 5},
+  "spi_default": {"sck": 18, "miso": 16, "mosi": 19, "cs": 17},
+  "uart_default": {"tx": 0, "rx": 1},
+  "native_usb": true,
+  "wifi": false,
+  "ble": false,
+  "special": [
+    "Onboard LED on GP25",
+    "BOOTSEL button (held during reset for USB mass-storage flashing)",
+    "PIO state machines (2 banks of 4) for custom protocols",
+    "USB Micro-B device only"
+  ],
+  "platformio_env": "pico",
+  "arduino_fqbn": "rp2040:rp2040:rpipico"
+}

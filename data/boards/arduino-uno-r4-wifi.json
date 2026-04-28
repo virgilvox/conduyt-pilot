@@ -1,0 +1,32 @@
+{
+  "_sources": [
+    "https://docs.arduino.cc/hardware/uno-r4-wifi/",
+    "https://github.com/arduino/ArduinoCore-renesas variants/UNOWIFIR4 (pins_arduino.h, variant.cpp, pinmux.inc)",
+    "Conduyt protocol/boards/uno_r4_wifi.yml"
+  ],
+  "_notes": "Renesas RA4M1 main MCU + ESP32-S3-MINI-1 coprocessor for WiFi/BLE. RA4M1 itself has no native USB Host but the board uses the RA4M1 USB peripheral for host-PC USB CDC (D-/D+). BLE provided through the ESP32-S3 coprocessor. Default Wire on A4/A5 (Arduino indices 18/19); Wire1 on Qwiic header (internal pins outside the public 0..19 range). 12x8 LED matrix uses internal pins. RA4M1: 32KB SRAM, 256KB Flash.",
+  "id": "arduino-uno-r4-wifi",
+  "name": "Arduino UNO R4 WiFi",
+  "mcu": "RA4M1",
+  "ram_kb": 32,
+  "flash_kb": 256,
+  "gpio_numbering": "Arduino digital pin numbers (D0-D13 = 0-13, A0-A5 = 14-19)",
+  "gpio_pins": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+  "adc_pins": [14, 15, 16, 17, 18, 19],
+  "i2c_default": {"sda": 18, "scl": 19},
+  "spi_default": {"sck": 13, "miso": 12, "mosi": 11, "cs": 10},
+  "uart_default": {"tx": 1, "rx": 0},
+  "native_usb": true,
+  "wifi": true,
+  "ble": true,
+  "special": [
+    "ESP32-S3 coprocessor for WiFi 2.4GHz + BLE 5.0 (use WiFiS3 / ArduinoBLE libraries)",
+    "12x8 red LED matrix on the silkscreen",
+    "Qwiic / STEMMA QT I2C connector wired to Wire1",
+    "DAC on A0 (12-bit)",
+    "CAN bus pins on D4 (RX) / D5 (TX) via internal CAN peripheral",
+    "USB-C device port"
+  ],
+  "platformio_env": "uno_r4_wifi",
+  "arduino_fqbn": "arduino:renesas_uno:unor4wifi"
+}

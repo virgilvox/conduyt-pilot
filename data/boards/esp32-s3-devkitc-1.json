@@ -1,0 +1,31 @@
+{
+  "_sources": [
+    "Espressif arduino-esp32 variants/esp32s3/pins_arduino.h",
+    "Espressif ESP32-S3-DevKitC-1 user guide (espressif.com)",
+    "Conduyt protocol/boards/esp32-s3-devkitc-1.yml"
+  ],
+  "_notes": "ESP32-S3 GPIO pin multiplexing means almost any GPIO can be reassigned to I2C/SPI. Defaults below match espressif arduino-esp32 core. ADC2 (GPIO11-20) conflicts with WiFi when WiFi active; we list both ADC1+ADC2 here but warn. The DevKitC-1 ships in N8/N16/N32 flash variants and N8R2/N8R8 PSRAM variants; we use the common N8 (8MB flash, no PSRAM) baseline.",
+  "id": "esp32-s3-devkitc-1",
+  "name": "ESP32-S3 DevKitC-1 (N8)",
+  "mcu": "ESP32-S3",
+  "ram_kb": 512,
+  "flash_kb": 8192,
+  "gpio_numbering": "GPIOn",
+  "gpio_pins": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 45, 46, 47, 48],
+  "adc_pins": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+  "i2c_default": {"sda": 8, "scl": 9},
+  "spi_default": {"sck": 12, "miso": 13, "mosi": 11, "cs": 10},
+  "uart_default": {"tx": 43, "rx": 44},
+  "native_usb": true,
+  "wifi": true,
+  "ble": true,
+  "special": [
+    "RGB NeoPixel onboard on GPIO48 (some early units use GPIO38)",
+    "USB OTG on GPIO19 (D-) and GPIO20 (D+)",
+    "BOOT button on GPIO0",
+    "RESET button (EN)",
+    "Vector instructions for ML acceleration"
+  ],
+  "platformio_env": "esp32-s3-devkitc-1",
+  "arduino_fqbn": "esp32:esp32:esp32s3"
+}
