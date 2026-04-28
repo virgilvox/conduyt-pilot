@@ -457,7 +457,51 @@ All 5 SDK docs invited readers to "see the per-module pages under [Modules](/doc
 - **Module command bytes** match firmware `case 0x0X` dispatches (verified in pass 11).
 - **`getting-started/panel.md`** spot-check — uses `device.declarePinCaps`, `device.declareI2cBus`, `device.declareSpiBus` patterns (firmware-side, verified to exist in `firmware/src/conduyt/ConduytDevice.h`).
 
-## Verification (post tenth pass)
+## Thirteenth-pass findings — root and SDK READMEs (high-impact: first-read content)
+
+User pushed deeper. This pass scanned the project's top-level READMEs (often a user's first read) and per-SDK READMEs. **5 drift sites caught** in the highest-visibility entry points:
+
+### 1. `README.md` (project root) JS quickstart
+```js
+const value = await device.pin(A0).read('analog')   // WRONG
+```
+Two bugs: `A0` is an undefined identifier (not a string), and `read('analog')` is fictional (real `read()` takes no args). Fixed to `device.pin('A0').read()` with explicit `device.pin(0).analogRead()` alternative.
+
+### 2. `README.md` Python quickstart
+```python
+value = await device.pin(0).read("analog")  # WRONG
+```
+Python `_PinProxy.read(self) -> int` takes no string param (verified in `sdk/python/src/conduyt/device.py` line 168). Fixed to `device.pin("A0").read()` with explicit `device.pin(0).analog_read()` alternative.
+
+### 3. `firmware/README.md` module example
+```cpp
+device.addModule(new ConduytModuleNeoPixel(6, 30)); // WRONG — won't compile
+```
+The firmware module class has a **default constructor only** (verified in `firmware/src/conduyt/modules/ConduytModuleNeoPixel.h`). Pin/count are configured by the host's `MOD_CMD` `begin` (0x01) over the wire. Fixed to `new ConduytModuleNeoPixel()` with a comment explaining the begin-over-wire flow plus a host-side example.
+
+### 4. `sdk/python/README.md` Quick Start
+Both async and sync examples used the fictional `pin(0).read("analog")` pattern. Both fixed.
+
+### 5. `sdk/js/README.md` Quick Start
+```js
+const value = await device.pin(A0).read('analog')                              // WRONG
+for await (const reading of device.pin(A0).subscribe({ mode: 'analog' }))     // WRONG
+```
+Fictional `A0` identifier, fictional `read('analog')`, AND fictional string `mode: 'analog'` (real subscribe option is numeric `SUB_MODE.*`). Fixed all three.
+
+### Why this pass matters
+READMEs are first-read content. Every new user lands here. The bugs would have failed:
+- JS: `ReferenceError: A0 is not defined`
+- Python: NAK from firmware (string "analog" gets encoded as bytes onto wire, parsed as invalid pin)
+- Firmware: compile error from missing constructor
+
+That every first-page README had drifted is the most consequential finding of the audit so far.
+
+### Verified clean
+- Other README files (`broker/README.md`, `sdk/{go,rust,swift,wasm}/README.md`) checked for the same patterns. No additional drift.
+- Python `analog_read` and `digital_read` exist as snake_case methods on `_PinProxy` (mirrors JS API).
+
+## Verification (post thirteenth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
