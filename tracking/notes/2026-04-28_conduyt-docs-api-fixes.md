@@ -156,7 +156,49 @@ The user asked for one more deep audit. This pass extended to: `reference/hello-
 - `sdks/swift.md` uses `device.pinMode(...)` and `device.pinWrite(...)`. **These are real Swift methods** (verified in `sdk/swift/Sources/ConduytKit/ConduytDevice.swift` lines 70 and 75). The Swift SDK has a different API shape than JS; not drift.
 - Python code in module docs uses `module_id=0` constructor argument. Out of audit scope (Python SDK source not verified).
 
-## Verification (post third pass)
+## Fourth-pass findings — caught a bug I introduced myself
+
+User asked for one more meticulous re-audit. Caught a real correctness bug in code I had committed:
+
+### The WebSerialTransport pre-open bug
+`WebSerialTransport.connect()` (in `sdk/js/src/transports/web-serial.ts` line 52) **unconditionally** calls `this._port.open({ baudRate })`. If the user pre-opens the port and passes it via `{ port }`, the transport tries to open it again. WebSerial spec rejects double-open with `InvalidStateError`.
+
+In my second-pass fix to `sdks/javascript.md`, and in three of the v2 training examples I authored, I had introduced this exact pattern:
+
+```ts
+// WRONG (throws "port already open"):
+const port = await navigator.serial.requestPort()
+await port.open({ baudRate: 115200 })
+const device = await ConduytDevice.connect(new WebSerialTransport({ port }))
+```
+
+The correct pattern (lets the transport open):
+
+```ts
+// CORRECT:
+const port = await navigator.serial.requestPort()
+const device = await ConduytDevice.connect(
+  new WebSerialTransport({ port, baudRate: 115200 })
+)
+```
+
+Or omit `port` entirely and let the transport call `requestPort()` itself.
+
+**Fixed in 4 places:**
+1. `conduyt/site/content/docs/sdks/javascript.md` — Browser (WebSerial) example
+2. `data/seeds/v2_conduyt_js_single.jsonl` — example 2 (single-turn WebSerial)
+3. `data/seeds/v2_conduyt_js_multiturn.jsonl` — example 4 (multi-turn WebSerial #connect+#toggle)
+4. `data/seeds/v2_conduyt_js_multiturn.jsonl` — example 28 (WebSerial with vid/pid filters)
+
+Added a comment to the doc explaining why pre-opening is wrong, so this trap is documented for future readers.
+
+### Other meticulous spot-checks (clean)
+- **All 7 module wrapper internal names** (`device.module(<name>)`) match firmware-side `name()` returns: servo, neopixel, oled1306, dht, encoder, stepper, pid. The OLED firmware module is `oled1306`, correctly documented in `js-api.md` after my second-pass fix.
+- **All v2 subscribe options** verified to use correct names: `intervalMs` (never `interval`), `mode: SUB_MODE.X` (numeric, never strings), `threshold`. No drift.
+- **Module name 8-char limit**: every firmware module name fits. Longest: `neopixel`, `oled1306`, `i2c_pass` at exactly 8 chars.
+- **Firmware transports verified**: `ConduytBLE`, `ConduytCLASP`, `ConduytMQTT`, `ConduytSerial`, `ConduytTCP`, `ConduytUSBSerial` exist. Doc mentions of TCP (in transport-architecture.md) match. WebSocket is host-only on the JS side.
+
+## Verification (post fourth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
