@@ -437,6 +437,26 @@ ESP32 advertises 512, not 1024. Fixed the claim with the actual per-platform buf
 - **Firmware C++ runtime** (e.g., does `device.poll()` actually pump the OTA orchestrator at the right cadence?). Verifiable only by running on hardware.
 - **`protocol/generate.ts` codegen logic** (would need to run it and diff outputs against committed generated files). It's a build-time tool; if the committed generated files are correct (which they are, since runtime works), the generator is correct.
 
+## Twelfth-pass findings — internal link integrity
+
+User pushed deeper. This pass scanned every `[text](/docs/...)` link across all 58 docs and validated each target. Found **6 broken internal links** affecting 6 doc files:
+
+### Found and fixed
+1. **`boards/nrf52840-dk.md:36`** linked to `/docs/concepts/transports`. Real path is `/docs/concepts/transport-architecture`. Anyone clicking that link from the nRF52840-DK board page gets a 404.
+2. **`sdks/javascript.md:69`** — linked to `/docs/modules` (no `index.md` for the modules directory). Same in:
+3. **`sdks/python.md:66`**
+4. **`sdks/go.md:76`**
+5. **`sdks/rust.md:62`**
+6. **`sdks/swift.md:75`**
+
+All 5 SDK docs invited readers to "see the per-module pages under [Modules](/docs/modules)" but `/docs/modules` doesn't exist as a page — only its child pages do (`/docs/modules/servo`, `/docs/modules/oled`, etc). Fixed all 5 to point at `/docs/modules/servo` so the link lands on a real, representative module page; readers can navigate to others via the site's nav tree.
+
+### Verified clean
+- **All other internal `/docs/...` links** (across 58 doc files) resolve to real `.md` files. Zero broken after this pass.
+- **Python `sensor-dashboard.md` HelloResp usage** verified: `hello.firmware_name`, `len(hello.pins)`, `hello.modules` all match Python `HelloResp` dataclass fields in `sdk/python/src/conduyt/hello.py`.
+- **Module command bytes** match firmware `case 0x0X` dispatches (verified in pass 11).
+- **`getting-started/panel.md`** spot-check — uses `device.declarePinCaps`, `device.declareI2cBus`, `device.declareSpiBus` patterns (firmware-side, verified to exist in `firmware/src/conduyt/ConduytDevice.h`).
+
 ## Verification (post tenth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
