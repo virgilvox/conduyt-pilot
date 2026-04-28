@@ -198,7 +198,51 @@ Added a comment to the doc explaining why pre-opening is wrong, so this trap is 
 - **Module name 8-char limit**: every firmware module name fits. Longest: `neopixel`, `oled1306`, `i2c_pass` at exactly 8 chars.
 - **Firmware transports verified**: `ConduytBLE`, `ConduytCLASP`, `ConduytMQTT`, `ConduytSerial`, `ConduytTCP`, `ConduytUSBSerial` exist. Doc mentions of TCP (in transport-architecture.md) match. WebSocket is host-only on the JS side.
 
-## Verification (post fourth pass)
+## Fifth-pass findings
+
+User asked to go even deeper. Found a real bug in 3 of my v2 training examples:
+
+### MockTransport examples would hang at connect()
+`MockTransport.connect()` just sets `_connected = true` and never injects a response. But `ConduytDevice.connect()` awaits a HELLO_RESP — so `await ConduytDevice.connect(new MockTransport())` blocks forever.
+
+The actual conduyt-js test suite (`sdk/js/test/device.test.ts`) handles this with an `autoRespond(transport)` helper that wraps `transport.send` to inject a HELLO_RESP when the SDK sends a HELLO command (and ACKs everything else):
+
+```ts
+function autoRespond(t: MockTransport): void {
+  const orig = t.send.bind(t)
+  t.send = async (packet: Uint8Array) => {
+    await orig(packet)
+    const { type, seq } = wireDecode(packet)
+    if (type === CMD.HELLO) {
+      t.inject(wireEncode(makePacket(EVT.HELLO_RESP, seq, helloPayload())))
+    } else {
+      t.inject(wireEncode(makePacket(EVT.ACK, seq)))
+    }
+  }
+}
+```
+
+Plus a `helloPayload()` builder that returns a minimal HELLO_RESP byte payload.
+
+My v2 examples just called `await ConduytDevice.connect(new MockTransport())` directly — that hangs. Three examples affected:
+
+1. `v2_conduyt_js_api_docs.jsonl` example 5 ("how do I write unit tests?")
+2. `v2_conduyt_js_single.jsonl` example 6 (vitest test for pin.write)
+3. `v2_conduyt_js_multiturn.jsonl` example 13 (mock setup + extending test)
+
+All three rewritten to include the `autoRespond` helper inline, with a comment pointing to `sdk/js/test/device.test.ts` as the canonical pattern. The model will now learn the right way to mock-test against ConduytDevice instead of producing code that hangs at connect.
+
+### Other meticulous spot-checks (clean)
+- **All command codes** (CMD: PING, HELLO, PIN_*, I2C_*, SPI_XFER, MOD_CMD, STREAM_*, DS_*, OTA_*, RESET) and event codes (EVT: PONG, HELLO_RESP, ACK, NAK, PIN_*, I2C_*, SPI_*, MOD_*, STREAM_DATA, DS_*, LOG, FATAL) verified row-by-row in `packet-types.md` against `sdk/js/src/core/constants.ts`.
+- **All error codes** (ERR: 0x01 to 0x10) verified in `error-codes.md`.
+- **PIN_CAP bits** (0 to 7) verified in `hello-resp.md`.
+- **PIN_MODE values** (input=0x00, output=0x01, pwm=0x02, analog=0x03, input_pullup=0x04) verified.
+- **SUB_MODE values** (CHANGE=0x01, RISING=0x02, FALLING=0x03, ANALOG_POLL=0x04) verified.
+- **DS_TYPE_SIZE table** (BOOL/INT8/UINT8 = 1, INT16/UINT16 = 2, INT32/FLOAT32 = 4, STRING/BYTES variable) verified.
+- **All module event codes** (Encoder Tick, Stepper Done, PID Tick) all use `0x01`. Event payload sizes match source decoders.
+- **ConduytOTA** chunk-size logic verified: `Math.max(64, advertised - 4)` per source. flash-ota.md prose matches.
+
+## Verification (post fifth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
