@@ -138,7 +138,25 @@ Fixed: rewrote the command table to match source. Begin shows the type byte. Com
 
 Updated the "Notes" section: removed the misleading mention of `setPixelW()` (no such method) and added a one-line note about `setRange` for runs.
 
-## Verification (post second pass)
+## Third-pass findings
+
+The user asked for one more deep audit. This pass extended to: `reference/hello-resp.md`, `reference/packet-structure.md`, `how-to/add-module.md`, `how-to/broker-setup.md`, `how-to/troubleshooting.md`, all `getting-started/*.md` docs, and `tutorials/sensor-dashboard.md`.
+
+### Found and fixed
+1. **`reference/packet-structure.md`** — COBS table row said "BLE (NUS)". Removed the parenthetical since CONDUYT BLE doesn't use NUS (already fixed UUIDs in connect-ble.md, this was the matching cleanup).
+2. **`how-to/troubleshooting.md`** — `subscribe({ interval: 100, threshold: 5 })` was using the wrong option name. The actual option is `intervalMs`, not `interval` (`PinSubscribeOptions` interface in `core/types.ts`). The wrong name would silently default to 100ms (since the typo gets ignored), so this is a "code that runs but does nothing useful" bug. Fixed.
+
+### Verified clean (third pass)
+- **`reference/hello-resp.md`**: binary layout matches `parseHelloResp` byte-for-byte (firmware name 16 bytes, version 3 bytes, mcu_id 8 bytes, ota_capable 1 byte, pin_count + pins[], i2c/spi/uart counts, max_payload uint16 LE, modules[] with 12-byte overhead per module + pin_count, datastreams[] 28 bytes each).
+- **`reference/packet-structure.md`**: header layout (MAGIC + VER + TYPE + SEQ + LEN(2 LE) + PAYLOAD + CRC8) matches `wireEncode` exactly. CRC region `[2..7+payloadLen-1]` is correct.
+- **`how-to/add-module.md`**: `ConduytModuleBase` interface (name, versionMajor/Minor, begin, handle, poll, pinCount, pins) matches `firmware/src/conduyt/ConduytModuleBase.h`. The `CONDUYT_MODULE` and `CONDUYT_ON_CMD` macros exist as documented.
+- **`how-to/broker-setup.md`, `getting-started/*.md`, `tutorials/sensor-dashboard.md`**: all JS code uses the correct pin proxy / datastream proxy / capabilities access patterns. No drift.
+
+### Out-of-scope flagged
+- `sdks/swift.md` uses `device.pinMode(...)` and `device.pinWrite(...)`. **These are real Swift methods** (verified in `sdk/swift/Sources/ConduytKit/ConduytDevice.swift` lines 70 and 75). The Swift SDK has a different API shape than JS; not drift.
+- Python code in module docs uses `module_id=0` constructor argument. Out of audit scope (Python SDK source not verified).
+
+## Verification (post third pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
