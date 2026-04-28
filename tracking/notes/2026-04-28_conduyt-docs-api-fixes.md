@@ -242,7 +242,29 @@ All three rewritten to include the `autoRespond` helper inline, with a comment p
 - **All module event codes** (Encoder Tick, Stepper Done, PID Tick) all use `0x01`. Event payload sizes match source decoders.
 - **ConduytOTA** chunk-size logic verified: `Math.max(64, advertised - 4)` per source. flash-ota.md prose matches.
 
-## Verification (post fifth pass)
+## Sixth-pass findings — meticulous verification of pass-5 fixes
+
+User asked for one more deep audit. This pass verified my own pass-5 fixes byte-for-byte and didn't find new bugs in the code, but did meaningfully validate:
+
+### Helper-function correctness
+The `helloPayload()` and `autoRespond()` helpers I added in pass 5 are byte-perfect:
+- Simulated `parseHelloResp` on both the long-form (api_docs) and short-form (single, multi-turn) helloPayload buffers. Both produce identical 56-byte payloads that parse cleanly into `{name: 'Mock', version: (1,0,0), pin_count: 20, i2c: 1, spi: 1, uart: 1, max_payload: 512, modules: 0, datastreams: 0}`.
+- `autoRespond` correctly reuses the incoming `seq` byte when injecting responses, which is what `_seq.resolve(seq)` expects to clear the awaiting promise.
+- COBS handling: `MockTransport.needsCOBS = false`, so the SDK's `_sendCommand` sends raw wire bytes. `autoRespond` decodes raw bytes (no COBS strip) and injects raw-wire HELLO_RESP back. `_onRawReceive` for non-COBS goes straight to `_handlePacket`. End-to-end consistent.
+
+### Cross-cutting verification
+- **Every wrapper method I call in v2 examples** (Servo: attach/write/writeMicroseconds/detach, NeoPixel: begin/setPixel/setRange/fill/show/setBrightness, OLED: begin/clear/text/drawRect/show, DHT: begin/read, Encoder: attach/read/reset/onTick, Stepper: config/move/moveTo/onDone, PID: config/setTarget/setInput/setOutput/enable/onTick) verified present in source with matching signature.
+- **Top-level exports** I import (ConduytDevice, ReconnectTransport, ConduytOTA, EVT, CMD, makePacket, wireEncode, wireDecode, SUB_MODE, ConduytNAKError, ConduytTimeoutError, ConduytDisconnectedError, ConduytCapabilityError) all present in `sdk/js/src/index.ts`.
+- **Subpath imports** (transports/serial, web-serial, ble, mqtt, websocket, mock + modules/servo, neopixel, oled, dht, encoder, stepper, pid) all present in `sdk/js/package.json` exports field.
+- **Getter access patterns** verified: `device.connected`, `device.capabilities`, `transport.connected`, `pin.capabilities` — all read as properties, never called as methods.
+
+### What I deliberately did NOT touch
+- Python/Go/Rust/Swift SDK code blocks (separate sources, separate audit effort)
+- Board-specific docs (we have JSON board profiles for our 8 target boards)
+- Firmware C++ code blocks beyond verifying the methods referenced exist in `firmware/src/conduyt/ConduytDevice.h`
+- Broker-side MQTT topic routing claims in `connect-mqtt.md` (would require reading `broker/` source)
+
+## Verification (post sixth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
