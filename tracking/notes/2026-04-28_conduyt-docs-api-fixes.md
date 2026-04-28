@@ -322,7 +322,47 @@ Fixed: complete rewrite with a `ds_index(device, name)` helper that looks up the
 
 The doc's topic structure table (`cmd/{typeHex}`, `evt/{typeHex}`, `hello`, `status`, `ds/{name}/cmd`, `ds/{name}/evt`) accurately describes the **protocol-level topic landscape**, even though the JS and Python SDKs use different conventions on the cmd side. Not strict drift since firmware accepts both forms via `cmd/#` wildcard.
 
-## Verification (post seventh pass)
+## Eighth-pass findings — Swift SDK audit
+
+User asked me to keep going. This pass expanded scope into the Swift / ConduytKit references. Found **three drift sites** affecting Swift users:
+
+### 1. `how-to/connect-ble.md` Swift used a fictional class
+```swift
+let device = ConduytBLEDevice()              // doesn't exist
+let capabilities = try await device.connect()
+print(capabilities.firmwareName)              // Data has no .firmwareName
+try await device.pin(13).mode(.output)        // no pin proxy in Swift
+```
+
+Verified against `sdk/swift/Sources/ConduytKit/`:
+- `ConduytBLEDevice` is fictional. The real pattern is `BLETransport()` + `ConduytDevice(transport:)`.
+- `connect()` returns `Data` (raw HELLO_RESP bytes), not a parsed capabilities struct. There is no Swift-side `parseHelloResp`; users get raw bytes.
+- `device.pin(N).mode/write/read` is fictional. Swift uses **flat methods** on the device: `device.pinMode(13, mode: ConduytPinMode.output)`, `device.pinWrite(13, value: 1)`, `device.pinRead(0) -> UInt16`.
+
+Also fixed a residual NUS reference: the prose said "ConduytKit handles NUS discovery". Changed to "CONDUYT service discovery" since CONDUYT uses its own GATT service UUIDs (`0000cd0[123]-...`), not Nordic UART Service.
+
+### 2. `how-to/flash-ota.md` Swift used a fictional `BLETransport` arg
+```swift
+let transport = BLETransport(serviceUUID: ...)   // wrong arg name
+```
+
+Real init: `BLETransport(name: String? = nil, uuid: UUID? = nil)`. There's no `serviceUUID:` parameter. Filter by `uuid:` (a `UUID`) or by `name:`, or pass nothing and take the first CONDUYT advertiser.
+
+### 3. `sdks/swift.md` Quick Start had the same `serviceUUID:` bug
+Same fictional argument as flash-ota.md, fixed identically.
+
+## Verified clean (Go, Rust, other Swift)
+- **Go SDK**: doc claims `conduyt.NewDevice(transport, 5*time.Second)`, `device.Connect(ctx)`, `device.Pin(13).Mode(ctx, conduyt.PinModeOutput)`. All real (`PinModeOutput=0x01` in `sdk/go/pin.go`). connect-serial.md Go is clean.
+- **Rust SDK**: `Device::new(transport)`, `device.connect()` (returns `Vec<u8>`), `flash(&mut device, &fw, FlashOptions { on_progress: ..., ..Default::default() })`. `FlashOptions` has `#[derive(Default)]` confirmed in `sdk/rust/src/ota.rs`. flash-ota.md Rust is clean.
+- **Swift `ConduytPinMode` enum** has static `output`, `input`, `pwm`, `analog`, `inputPullup` constants typed `UInt8`. `ConduytSubMode` has the four SUB_MODE values. So doc usage `ConduytPinMode.output` works as a `UInt8` literal.
+- **Swift `ConduytOTA`** and `OTAFlashOptions` exist with `onProgress` callback as documented.
+- **Rust `Encoder/DHT/NeoPixel/Servo/...`** modules take `(device, module_id)` like Python — same wire-API style.
+
+## Final corpus state
+- **conduyt repo files modified**: 14 across 8 audit passes (~360 lines changed total). Three new this pass: `connect-ble.md`, `flash-ota.md`, `sdks/swift.md`.
+- **conduyt-pilot v2 bundle**: 243 train + 25 eval, refreshed with corrected docs.
+
+## Verification (post eighth pass)
 
 Comprehensive grep across audited docs for **every** drift pattern I've found:
 
