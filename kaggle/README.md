@@ -4,7 +4,7 @@ The full step-by-step Kaggle workflow lives in the top-level `README.md`. This f
 
 ## Pin rationale (`train.ipynb`)
 
-The pins come from Unsloth's own current Kaggle Qwen2.5-Coder reference notebook plus the `requires_dist` constraints in `unsloth==2026.4.8`. Newer versions on PyPI break the install:
+The pins come from Unsloth's own current Kaggle Qwen2.5-Coder reference notebook plus the `requires_dist` constraints in `unsloth==2026.4.8` (released 2026-04-23, latest on PyPI as of 2026-04-28). Newer versions on PyPI break the install:
 
 | Package | Pinned | Why |
 |---|---|---|
@@ -19,15 +19,29 @@ The pins come from Unsloth's own current Kaggle Qwen2.5-Coder reference notebook
 
 If you re-run this in 6+ months, run `pip show unsloth` first and re-derive the compatibility matrix. Don't blindly take "latest".
 
-## Hyperparameter rationale (v2)
+## Hyperparameter rationale (v2 through v5)
 
-| Param | v1 | v2 | Why |
+Hyperparameters were tuned in v2 and have been kept fixed across v3, v4, v5 because the wins from those versions came from dataset growth (contrast / breadth / mascarade imports), not from training tweaks.
+
+| Param | v1 | v2-v5 | Why |
 |---|---|---|---|
 | LoRA `r` | 16 | **32** | More capacity to override the base model's Arduino prior. v1 r=16 wasn't enough. |
 | `lora_alpha` | 32 | **64** | Match alpha=2*r. Standard Unsloth ratio. |
-| `lora_dropout` | 0.05 | **0** | Unsloth's fast-patching kernels require dropout=0 (~2-3x speedup). At ~220 examples, dropout regularization isn't doing anything anyway. |
-| `num_train_epochs` | 3 | **5** | Small dataset benefits from extra passes. ~140 gradient updates total at effective batch 8. |
+| `lora_dropout` | 0.05 | **0** | Unsloth's fast-patching kernels require dropout=0 (~2-3x speedup). At under 500 examples, dropout regularization isn't doing anything anyway. |
+| `num_train_epochs` | 3 | **5** | Small dataset benefits from extra passes. v5 has 453 train examples at effective batch 8 = ~283 steps per epoch x 5 = ~1415 total updates. |
 | `fp16` | True | True | T4 silicon is fp16-only. Don't flip to bf16. |
+
+## Dataset growth across versions
+
+Notebook auto-discovers the dataset mount path via recursive glob, so re-running with a newer dataset version requires only swapping the attached Kaggle dataset.
+
+| Version | Train | Eval | Total | Bundle | What grew |
+|---|---|---|---|---|---|
+| v1 | 90 | 0 | 90 | 48 KB | Initial seeds + synthesis |
+| v2 | 243 | 25 | 268 | 114 KB | +92 conduyt-js examples |
+| v3 | 329 | 35 | 364 | 135 KB | +96 Arduino-vs-conduyt-js contrast |
+| v4 | 432 | 47 | 479 | 180 KB | +115 hardware/electronics breadth |
+| v5 | 453 | 49 | 502 | 215 KB | +23 mascarade imports (MIT) |
 
 ## MLC wheel rationale
 
@@ -39,13 +53,25 @@ If you re-run this in 6+ months, run `pip show unsloth` first and re-derive the 
 
 ## WebLLM model_lib URL
 
-Confirmed against `mlc-ai/web-llm@v0.2.82`'s `src/config.ts` (lines 290-291, 1378-1389) and HTTP-200 verified:
+Confirmed against current `mlc-ai/web-llm` `src/config.ts` on `main` and HTTP-200 verified at notebook authoring time (2026-04-28):
 
 ```
-https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_80/Qwen2-1.5B-Instruct-q4f16_1-ctx4k_cs1k-webgpu.wasm
+https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_83/base/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm
 ```
 
-The `v0_2_80` subfolder is the WebLLM convention; the wasm itself targets the Qwen2.5-Coder-1.5B-Instruct-q4f16_1 quantization our convert step produces.
+Two changes from the v2 URL:
+1. `v0_2_80` -> `v0_2_83`. WebLLM bumps this directory roughly with every minor release.
+2. New `base/` subfolder, and the wasm filename dropped the `ctx4k` segment (`...-q4f16_1-ctx4k_cs1k-webgpu.wasm` -> `...-q4f16_1_cs1k-webgpu.wasm`).
+
+`Qwen2.5-Coder-1.5B-Instruct` uses the same prebuilt WASM library as `Qwen2-1.5B-Instruct` because the architecture is identical; WebLLM's own `Qwen2.5-Coder-1.5B-Instruct` config entry references this same `Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm`.
+
+If a future WebLLM version moves the path again (this directory has gone v0_2_30 -> v0_2_34 -> ... -> v0_2_80 -> v0_2_83), check current state with:
+
+```
+curl -sI https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_83/base/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm
+```
+
+A 200 means it's still current. A 404 means re-derive from the `modelLibURLPrefix` and the model entry in `mlc-ai/web-llm`'s `src/config.ts` on main.
 
 ## Platform quirks (Kaggle, 2026)
 
@@ -53,9 +79,11 @@ The `v0_2_80` subfolder is the WebLLM convention; the wasm itself targets the Qw
 ```
 /kaggle/input/datasets/<kaggle-username>/<dataset-slug>/
 ```
-Not the legacy `/kaggle/input/<slug>/`. The train notebook uses `glob.glob("/kaggle/input/**/train.jsonl", recursive=True)` to handle either form. Don't hardcode either; if Kaggle changes the layout again, the recursive glob still wins.
+Not the legacy `/kaggle/input/<slug>/`. For this project that resolves to `/kaggle/input/datasets/moheebzara/conduyt-pilot-data/`. The train notebook uses `glob.glob("/kaggle/input/**/train.jsonl", recursive=True)` to handle either form. Don't hardcode either; if Kaggle changes the layout again, the recursive glob still wins.
 
-Kaggle username may differ from your HF username. The dataset path uses the kaggle one; HF push targets use your HF user.
+Kaggle username (`moheebzara`) differs from HF username (`virgilvox`). The dataset path uses `moheebzara`; HF push targets use `virgilvox/...`. Don't conflate.
+
+**Uploading a new dataset version**: when you ship v5, do `kaggle datasets version` against the existing `moheebzara/conduyt-pilot-data` slug rather than creating a new dataset. The slug stays the same; the version bumps. The notebook's recursive glob doesn't care which version you attach.
 
 **Pip entry-point scripts aren't on PATH.** `pip install`-ing a package with a CLI entry point (e.g. `mlc_llm`, `huggingface-cli`, `accelerate`) does NOT make the script available as a shell command. Always invoke via `python -m <package>` from `!`-shell cells:
 
