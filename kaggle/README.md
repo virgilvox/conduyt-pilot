@@ -15,7 +15,7 @@ The pins come from Unsloth's own current Kaggle Qwen2.5-Coder reference notebook
 | `bitsandbytes` | 0.49.2 | Satisfies `bitsandbytes>=0.45.5,!=0.46.0,!=0.48.0`. |
 | `accelerate` | 1.13.0 | Satisfies `accelerate>=0.34.1`. |
 | `datasets` | 4.3.0 | Unsloth caps `datasets<4.4.0`. PyPI latest 4.8.x is OUT OF RANGE. |
-| `huggingface_hub` | 1.12.0 | Satisfies `huggingface_hub>=0.34.0`. |
+| `huggingface_hub` | unpinned | transformers 4.56.2 caps `<1.0`; unsloth caps `>=0.34.0`. Let pip resolve (typically lands on 0.35.x). Pinning to 1.12.0 fails install. |
 
 If you re-run this in 6+ months, run `pip show unsloth` first and re-derive the compatibility matrix. Don't blindly take "latest".
 
